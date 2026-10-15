@@ -1,0 +1,21 @@
+{
+  "_說明": "天氣資料設定。逐時資料由 scripts/fetch_cwa_weather.py 下載至 data/weather/。代表日由 core.data_source.pick_representative_day 依「平日、日雨量 < 1 mm、日均溫與日最高溫最接近當月平均」挑選。",
+  "source": {
+    "name": "中央氣象署 氣候觀測資料查詢服務 CODiS（測站逐時觀測資料）",
+    "url": "https://codis.cwa.gov.tw/StationData",
+    "station_id": "467490",
+    "station_name": "臺中（局屬氣象站）",
+    "retrieved_date": "2026-10-16",
+    "months": ["2026-07", "2026-01"]
+  },
+  "representative_days": {
+    "summer": {
+      "date": "2026-07-20",
+      "stats": "日均溫 29.3°C、最高 33.4°C、最低 26.5°C、平均濕度 71%、雨量 0.5 mm；2026 年 7 月平均：日均溫 29.4°C、日最高溫 33.1°C"
+    },
+    "winter": {
+      "date": "2026-01-20",
+      "stats": "日均溫 17.8°C、最高 21.8°C、最低 14.0°C、平均濕度 67%、雨量 0 mm；2026 年 1 月平均：日均溫 17.4°C、日最高溫 21.8°C"
+    }
+  }
+}

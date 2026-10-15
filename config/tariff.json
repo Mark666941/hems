@@ -1,0 +1,85 @@
+{
+  "_說明": "台電表燈（住商）電價。時段以整點表示，start 含、end 不含，例如 9–24 代表 09:00~24:00。period：peak=尖峰、semi_peak=半尖峰、off_peak=離峰。單位：元/度（kWh）。",
+  "source": {
+    "name": "台灣電力公司「各類電價表及計算範例（114 年 10 月 1 日起實施）」第 2、4、5 頁；「電價表」（114 年 11 月 17 日經濟部經授能字第 11400334600 號函同意備查）離峰日附註",
+    "url": "https://www.taipower.com.tw/media/wzicn04w/%E5%90%84%E9%A1%9E%E9%9B%BB%E5%83%B9%E8%A1%A8%E5%8F%8A%E8%A8%88%E7%AE%97%E7%AF%84%E4%BE%8B.pdf",
+    "detail_url": "https://www.taipower.com.tw/media/xtofy2yw/%E8%A9%B3%E7%B4%B0%E9%9B%BB%E5%83%B9%E8%A1%A8.pdf",
+    "effective_date": "2025-10-01",
+    "retrieved_date": "2026-10-16",
+    "note": "查詢時為現行費率；據媒體報導，經濟部 115 年第 2 次電價審議會（2026/9/18）決議 10–12 月不調整，12 月審議會可能再議，屆時請更新本檔。"
+  },
+  "summer_months": [6, 7, 8, 9],
+  "off_peak_days": {
+    "_說明": "週六、週日與離峰日全日適用離峰費率。fixed 為每年固定的國曆日期；農曆節日每年不同，需逐年列出。",
+    "fixed": ["01-01", "02-28", "04-04", "05-01", "09-28", "10-10", "10-25", "12-25"],
+    "by_year": {
+      "2026": {
+        "春節（農曆除夕前 1 日至正月初五）": ["2026-02-15", "2026-02-16", "2026-02-17", "2026-02-18", "2026-02-19", "2026-02-20", "2026-02-21"],
+        "民族掃墓節": ["2026-04-05"],
+        "端午節": ["2026-06-19"],
+        "中秋節": ["2026-09-25"]
+      }
+    }
+  },
+  "plans": {
+    "tou_2": {
+      "name": "簡易型時間電價（二段式）",
+      "type": "time_of_use",
+      "basic_fee_per_month": 75.00,
+      "surcharge": {"over_kwh_per_month": 2000, "add_per_kwh": 1.04},
+      "summer": {
+        "weekday": [
+          {"start": 0, "end": 9, "period": "off_peak", "rate": 2.06},
+          {"start": 9, "end": 24, "period": "peak", "rate": 5.16}
+        ],
+        "off_peak_day": [{"start": 0, "end": 24, "period": "off_peak", "rate": 2.06}]
+      },
+      "non_summer": {
+        "weekday": [
+          {"start": 0, "end": 6, "period": "off_peak", "rate": 1.99},
+          {"start": 6, "end": 11, "period": "peak", "rate": 4.93},
+          {"start": 11, "end": 14, "period": "off_peak", "rate": 1.99},
+          {"start": 14, "end": 24, "period": "peak", "rate": 4.93}
+        ],
+        "off_peak_day": [{"start": 0, "end": 24, "period": "off_peak", "rate": 1.99}]
+      }
+    },
+    "tou_3": {
+      "name": "簡易型時間電價（三段式）",
+      "type": "time_of_use",
+      "basic_fee_per_month": 75.00,
+      "surcharge": {"over_kwh_per_month": 2000, "add_per_kwh": 1.04},
+      "summer": {
+        "weekday": [
+          {"start": 0, "end": 9, "period": "off_peak", "rate": 2.06},
+          {"start": 9, "end": 16, "period": "semi_peak", "rate": 4.69},
+          {"start": 16, "end": 22, "period": "peak", "rate": 7.13},
+          {"start": 22, "end": 24, "period": "semi_peak", "rate": 4.69}
+        ],
+        "off_peak_day": [{"start": 0, "end": 24, "period": "off_peak", "rate": 2.06}]
+      },
+      "non_summer": {
+        "weekday": [
+          {"start": 0, "end": 6, "period": "off_peak", "rate": 1.99},
+          {"start": 6, "end": 11, "period": "semi_peak", "rate": 4.48},
+          {"start": 11, "end": 14, "period": "off_peak", "rate": 1.99},
+          {"start": 14, "end": 24, "period": "semi_peak", "rate": 4.48}
+        ],
+        "off_peak_day": [{"start": 0, "end": 24, "period": "off_peak", "rate": 1.99}]
+      }
+    },
+    "progressive": {
+      "name": "非時間電價（累進電價，住宅用）",
+      "type": "progressive",
+      "_說明": "依每月總度數分段累進，不分時段；up_to 為該級距上限（度），null 表示以上全部。",
+      "tiers": [
+        {"up_to": 120,  "summer": 1.78, "non_summer": 1.78},
+        {"up_to": 330,  "summer": 2.55, "non_summer": 2.26},
+        {"up_to": 500,  "summer": 3.80, "non_summer": 3.13},
+        {"up_to": 700,  "summer": 5.14, "non_summer": 4.24},
+        {"up_to": 1000, "summer": 6.44, "non_summer": 5.27},
+        {"up_to": null, "summer": 8.86, "non_summer": 7.03}
+      ]
+    }
+  }
+}
