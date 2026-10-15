@@ -113,9 +113,19 @@ class Schedule:
                 for s in minutes:
                     counts[(s.space, s.activity)] = counts.get((s.space, s.activity), 0) + 1
                 for (space, activity), n in counts.items():
-                    rows.append({"hour": hour, "member": m.id, "space": space,
+                    rows.append({"hour": hour, "member": m.id, "role": m.role, "space": space,
                                  "activity": activity, "fraction": n / 60})
         return pd.DataFrame(rows)
+
+    def presence(self, day_type: str, space_id: str, activities: set[str] | None = None) -> list[float]:
+        """每小時中「至少有一人在該空間（且正在做指定活動）」的時間比例（0–1）。
+        和 occupancy 不同：兩人同時看電視，電視只開一台，所以用「有沒有人」而不是「幾個人」。"""
+        minutes_used = [False] * MINUTES_PER_DAY
+        for m in self.members:
+            for i, s in enumerate(self.member_timeline(m, day_type)):
+                if s.space == space_id and (activities is None or s.activity in activities):
+                    minutes_used[i] = True
+        return [sum(minutes_used[h * 60:(h + 1) * 60]) / 60 for h in range(24)]
 
     def occupancy(self, day_type: str, activity: str | None = None) -> pd.DataFrame:
         """24 列 × 各空間：每小時平均人數。可指定 activity（例如 "sleep" 只算睡覺的人）。"""

@@ -1,0 +1,110 @@
+{
+  "_說明": "負載與耗電模型參數。數值為台灣常見 RC 公寓的典型值或文獻值，標示「估計」者為作者假設，可依實測校正。",
+
+  "geometry": {
+    "ping_to_m2": 3.3058,
+    "ceiling_height_m": 2.7,
+    "_說明": "exterior_wall_ratio = 外牆面積 ÷ 地板面積；window_ratio = 窗面積 ÷ 外牆面積（估計）。假設為中間樓層，無屋頂與地板熱傳；與鄰室隔間視為同溫不計。",
+    "by_template": {
+      "bedroom":     {"exterior_wall_ratio": 0.7, "window_ratio": 0.30, "daylight": true},
+      "living_room": {"exterior_wall_ratio": 0.6, "window_ratio": 0.45, "daylight": true},
+      "kitchen":     {"exterior_wall_ratio": 0.6, "window_ratio": 0.25, "daylight": false},
+      "bathroom":    {"exterior_wall_ratio": 0.5, "window_ratio": 0.10, "daylight": false},
+      "utility":     {"exterior_wall_ratio": 0.0, "window_ratio": 0.0, "daylight": false}
+    }
+  },
+
+  "envelope": {
+    "u_wall": 3.2,
+    "u_window": 6.0,
+    "shgc": 0.8,
+    "interior_shading": 0.6,
+    "wall_absorptance": 0.6,
+    "h_out": 17.0,
+    "vertical_irradiance_ratio": 0.45,
+    "wall_time_lag_h": 4,
+    "wall_decrement_factor": 0.4,
+    "_說明": "u_wall：15 cm RC 牆含粉刷、無隔熱（W/m²K）；u_window：5 mm 單層清玻璃鋁框；shgc：單層清玻璃日射取得率；interior_shading：窗簾遮蔽係數（估計）；wall_absorptance：淺色磁磚外牆日射吸收率；h_out：夏季外表面熱傳係數（ASHRAE 夏季設計值）；vertical_irradiance_ratio：各方位垂直面平均日射 ÷ 水平面日射（估計）；wall_time_lag_h / wall_decrement_factor：15 cm 混凝土牆的時滯與衰減（ASHRAE Fundamentals 典型範圍 4–6 h、0.3–0.5）。"
+  },
+
+  "infiltration": {
+    "ach": 0.5,
+    "air_density": 1.2,
+    "cp_air": 1005,
+    "h_fg": 2501000,
+    "indoor_rh_pct": 55,
+    "_說明": "ach：門窗關閉時的換氣次數（次/h，估計）；indoor_rh_pct：冷氣運轉時室內相對濕度目標。"
+  },
+
+  "thermal_mass": {
+    "kj_per_m2_k": 60,
+    "_說明": "室內家具與牆體表層的有效熱容量（kJ/m²·K，以地板面積計，估計）。冷氣剛開或設定溫度調降時，需額外移除這部分蓄熱（pull-down 負載）。"
+  },
+
+  "people": {
+    "_說明": "人體顯熱／潛熱（W/人）。awake 類參考 ASHRAE Fundamentals Ch.18 Table 1（Seated, very light work 70/45；Walking, standing 75/70）；sleep 依睡眠代謝率約 0.7 met 估計。child_factor：兒童相對成人的發熱比例（估計）。",
+    "gains": {
+      "sleep":   {"sensible": 40, "latent": 25},
+      "rest":    {"sensible": 65, "latent": 30},
+      "leisure": {"sensible": 70, "latent": 45},
+      "study":   {"sensible": 70, "latent": 45},
+      "meal":    {"sensible": 75, "latent": 55},
+      "cook":    {"sensible": 75, "latent": 70},
+      "wash":    {"sensible": 75, "latent": 70},
+      "shower":  {"sensible": 75, "latent": 70}
+    },
+    "child_factor": 0.75
+  },
+
+  "air_conditioner": {
+    "rated_cop": 3.6,
+    "rated_outdoor_c": 35,
+    "rated_indoor_c": 27,
+    "cop_outdoor_coef": 0.025,
+    "cop_indoor_coef": 0.03,
+    "min_part_load": 0.3,
+    "part_load_gain": 0.3,
+    "cycling_degradation": 0.25,
+    "min_cop": 1.5,
+    "natural_ventilation_below_c": 24,
+    "_說明": "natural_ventilation_below_c：室外低於此溫度時，住戶開窗通風而不開冷氣（估計）。額定 COP 為 CNS 14464 標準條件（室外 35°C、室內 27°C）下的值，額定冷房能力 = 額定耗電 × rated_cop。COP 隨室外溫度每升 1°C 降 2.5%、隨設定溫度每升 1°C 增 3%（典型變頻機線性近似）。部分負載：負載率在 min_part_load 以上時，變頻效率提升 part_load_gain ×（1 − 負載率）；低於最低負載率時壓縮機啟停，效率依 cycling_degradation 下降。"
+  },
+
+  "lighting": {
+    "daylight_threshold_w_m2": 80,
+    "_說明": "有採光的空間（臥室、客廳），水平日射低於此值才開燈；廚房、浴室有人就開燈。"
+  },
+
+  "appliance_rules": {
+    "_說明": "非冷氣家電的運轉規則。always：全天運轉；activity：空間中有人進行指定活動時運轉，duty 為運轉時間比例；awake 代表任何清醒活動。條件：outdoor_below_c（室外低於此溫度才開）、outdoor_rh_above（室外濕度高於此值才開）、not_cooling（該空間冷氣沒開才開）。",
+    "refrigerator": {"type": "always"},
+    "router":       {"type": "always"},
+    "camera":       {"type": "always"},
+    "lighting":     {"type": "activity", "activities": "awake"},
+    "tv":           {"type": "activity", "activities": ["leisure"]},
+    "computer":     {"type": "activity", "activities": ["study"]},
+    "range_hood":   {"type": "activity", "activities": ["cook"]},
+    "rice_cooker":  {"type": "activity", "activities": ["cook"], "duty": 0.5},
+    "microwave":    {"type": "activity", "activities": ["meal"], "duty": 0.1},
+    "exhaust_fan":  {"type": "activity", "activities": ["shower", "wash"]},
+    "bath_heater":  {"type": "activity", "activities": ["shower"], "outdoor_below_c": 20},
+    "dehumidifier": {"type": "activity", "activities": "awake", "outdoor_rh_above": 75, "not_cooling": true}
+  },
+
+  "shiftable_tasks": {
+    "_說明": "可移轉負載的每日工作。default_start 為未最佳化時的習慣開始時間（基準情境），階段 6 會移到離峰。",
+    "washer": {"duration_h": 1, "default_start": 20, "runs": {"weekday": 1, "holiday": 1}},
+    "dryer": {
+      "duration_h": 1.5, "default_start": 21, "runs": {"weekday": 1, "holiday": 1},
+      "only_if": {"daily_mean_rh_above": 75, "or_daily_mean_temp_below": 20},
+      "_說明": "潮濕或寒冷、衣服不易晾乾時才使用烘衣機（估計）。"
+    },
+    "water_heater": {
+      "default_start": 19,
+      "liters_per_shower": 40,
+      "supply_temp_c": 42,
+      "efficiency": 0.85,
+      "_說明": "儲熱式電熱水器：依當天洗澡次數計算熱水需求，Q = 水量 × 4.186 kJ/kg·K ×（供水溫度 − 冷水溫度）÷ 效率；冷水溫度以當日平均氣溫近似；運轉時數 = Q ÷ 額定功率。"
+    }
+  }
+}
