@@ -4,7 +4,7 @@
     家電目錄（appliances.json）→ 空間範本（space_templates.json）→ 房屋（default_house.json）
 下層只需寫「和上層不同的地方」，標配房型因此不會寫死在程式裡。
 
-使用者習慣與模式會在階段 3、階段 6 加入。
+家庭成員（使用者）在下方 Member；作息邏輯在 schedule.py；模式會在階段 6 加入。
 """
 from __future__ import annotations
 
@@ -100,6 +100,19 @@ class House:
             for s, a in self.all_appliances()
         ]
         return pd.DataFrame(rows)
+
+
+@dataclass
+class Member:
+    """家庭成員：自己的臥室、浴室，以及平日／假日各套用哪個作息。"""
+
+    id: str
+    name: str
+    role: str                      # adult / child，之後可用於代謝率等差異
+    bedroom: str                   # 空間 id
+    bathroom: str                  # 空間 id
+    routines: dict[str, str]       # {"weekday": 作息 id, "holiday": 作息 id}
+    extra_blocks: dict[str, list[dict]] = field(default_factory=dict)
 
 
 # ---------- 讀取設定檔 ----------

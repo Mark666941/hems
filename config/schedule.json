@@ -1,0 +1,138 @@
+{
+  "_說明": "家庭成員與作息。時間格式 HH:MM，start 含、end 不含，可精確到分鐘（例如 07:30）。space 可寫空間 id，或 @bedroom / @bathroom 代表該成員自己的臥室／浴室；null 代表外出。每個作息先以 default 填滿整天，再依序套用 blocks（後面的蓋過前面的），最後套用成員自己的 extra_blocks。",
+  "activities": {
+    "sleep": "睡覺",
+    "wash": "盥洗",
+    "shower": "洗澡",
+    "cook": "煮飯",
+    "meal": "用餐",
+    "leisure": "休閒",
+    "study": "讀書／電腦",
+    "rest": "休息",
+    "out": "外出"
+  },
+  "members": [
+    {
+      "id": "parent_1", "name": "家長 1", "role": "adult",
+      "bedroom": "master_bedroom", "bathroom": "bathroom_1",
+      "routines": {"weekday": "adult_weekday", "holiday": "adult_holiday"},
+      "extra_blocks": {
+        "weekday": [
+          {"start": "07:00", "end": "07:15", "space": "@bathroom", "activity": "wash"},
+          {"start": "18:00", "end": "19:00", "space": "kitchen", "activity": "cook"},
+          {"start": "21:30", "end": "22:00", "space": "@bathroom", "activity": "shower"}
+        ],
+        "holiday": [
+          {"start": "08:30", "end": "08:45", "space": "@bathroom", "activity": "wash"},
+          {"start": "11:30", "end": "12:00", "space": "kitchen", "activity": "cook"},
+          {"start": "17:30", "end": "18:30", "space": "kitchen", "activity": "cook"},
+          {"start": "21:30", "end": "22:00", "space": "@bathroom", "activity": "shower"}
+        ]
+      }
+    },
+    {
+      "id": "parent_2", "name": "家長 2", "role": "adult",
+      "bedroom": "master_bedroom", "bathroom": "bathroom_1",
+      "routines": {"weekday": "adult_weekday", "holiday": "adult_holiday"},
+      "extra_blocks": {
+        "weekday": [
+          {"start": "07:15", "end": "07:30", "space": "@bathroom", "activity": "wash"},
+          {"start": "22:00", "end": "22:30", "space": "@bathroom", "activity": "shower"}
+        ],
+        "holiday": [
+          {"start": "08:45", "end": "09:00", "space": "@bathroom", "activity": "wash"},
+          {"start": "22:00", "end": "22:30", "space": "@bathroom", "activity": "shower"}
+        ]
+      }
+    },
+    {
+      "id": "child_1", "name": "小孩 1", "role": "child",
+      "bedroom": "bedroom_1", "bathroom": "bathroom_2",
+      "routines": {"weekday": "child_weekday", "holiday": "child_holiday"},
+      "extra_blocks": {
+        "weekday": [
+          {"start": "07:00", "end": "07:10", "space": "@bathroom", "activity": "wash"},
+          {"start": "20:30", "end": "21:00", "space": "@bathroom", "activity": "shower"}
+        ],
+        "holiday": [
+          {"start": "08:30", "end": "08:40", "space": "@bathroom", "activity": "wash"},
+          {"start": "20:30", "end": "21:00", "space": "@bathroom", "activity": "shower"}
+        ]
+      }
+    },
+    {
+      "id": "child_2", "name": "小孩 2", "role": "child",
+      "bedroom": "bedroom_2", "bathroom": "bathroom_2",
+      "routines": {"weekday": "child_weekday", "holiday": "child_holiday"},
+      "extra_blocks": {
+        "weekday": [
+          {"start": "07:10", "end": "07:20", "space": "@bathroom", "activity": "wash"},
+          {"start": "21:00", "end": "21:30", "space": "@bathroom", "activity": "shower"}
+        ],
+        "holiday": [
+          {"start": "08:40", "end": "08:50", "space": "@bathroom", "activity": "wash"},
+          {"start": "21:00", "end": "21:30", "space": "@bathroom", "activity": "shower"}
+        ]
+      }
+    }
+  ],
+  "routines": {
+    "adult_weekday": {
+      "name": "大人平日：08:00–18:00 上班",
+      "default": {"space": "living_room", "activity": "leisure"},
+      "blocks": [
+        {"start": "00:00", "end": "07:00", "space": "@bedroom", "activity": "sleep"},
+        {"start": "07:00", "end": "07:30", "space": "@bedroom", "activity": "rest"},
+        {"start": "07:30", "end": "08:00", "space": "kitchen", "activity": "meal"},
+        {"start": "08:00", "end": "18:00", "space": null, "activity": "out"},
+        {"start": "19:00", "end": "19:45", "space": "kitchen", "activity": "meal"},
+        {"start": "22:00", "end": "23:00", "space": "@bedroom", "activity": "rest"},
+        {"start": "23:00", "end": "24:00", "space": "@bedroom", "activity": "sleep"}
+      ]
+    },
+    "child_weekday": {
+      "name": "小孩平日：07:30–16:30 上學",
+      "default": {"space": "living_room", "activity": "leisure"},
+      "blocks": [
+        {"start": "00:00", "end": "07:00", "space": "@bedroom", "activity": "sleep"},
+        {"start": "07:00", "end": "07:10", "space": "@bedroom", "activity": "rest"},
+        {"start": "07:10", "end": "07:30", "space": "kitchen", "activity": "meal"},
+        {"start": "07:30", "end": "16:30", "space": null, "activity": "out"},
+        {"start": "16:30", "end": "18:30", "space": "@bedroom", "activity": "study"},
+        {"start": "19:00", "end": "19:45", "space": "kitchen", "activity": "meal"},
+        {"start": "21:30", "end": "23:00", "space": "@bedroom", "activity": "study"},
+        {"start": "23:00", "end": "24:00", "space": "@bedroom", "activity": "sleep"}
+      ]
+    },
+    "adult_holiday": {
+      "name": "大人假日：晚起、午休、下午短暫外出",
+      "default": {"space": "living_room", "activity": "leisure"},
+      "blocks": [
+        {"start": "00:00", "end": "08:30", "space": "@bedroom", "activity": "sleep"},
+        {"start": "09:00", "end": "09:45", "space": "kitchen", "activity": "meal"},
+        {"start": "12:00", "end": "12:45", "space": "kitchen", "activity": "meal"},
+        {"start": "13:00", "end": "14:00", "space": "@bedroom", "activity": "sleep"},
+        {"start": "15:00", "end": "17:00", "space": null, "activity": "out"},
+        {"start": "18:30", "end": "19:15", "space": "kitchen", "activity": "meal"},
+        {"start": "22:30", "end": "23:30", "space": "@bedroom", "activity": "rest"},
+        {"start": "23:30", "end": "24:00", "space": "@bedroom", "activity": "sleep"}
+      ]
+    },
+    "child_holiday": {
+      "name": "小孩假日：晚起、上午讀書、下午短暫外出",
+      "default": {"space": "living_room", "activity": "leisure"},
+      "blocks": [
+        {"start": "00:00", "end": "08:30", "space": "@bedroom", "activity": "sleep"},
+        {"start": "09:00", "end": "09:45", "space": "kitchen", "activity": "meal"},
+        {"start": "09:45", "end": "12:00", "space": "@bedroom", "activity": "study"},
+        {"start": "12:00", "end": "12:45", "space": "kitchen", "activity": "meal"},
+        {"start": "13:00", "end": "14:00", "space": "@bedroom", "activity": "sleep"},
+        {"start": "15:00", "end": "17:00", "space": null, "activity": "out"},
+        {"start": "17:00", "end": "18:30", "space": "@bedroom", "activity": "study"},
+        {"start": "18:30", "end": "19:15", "space": "kitchen", "activity": "meal"},
+        {"start": "21:30", "end": "23:00", "space": "@bedroom", "activity": "study"},
+        {"start": "23:00", "end": "24:00", "space": "@bedroom", "activity": "sleep"}
+      ]
+    }
+  }
+}
