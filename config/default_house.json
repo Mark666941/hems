@@ -1,0 +1,19 @@
+{
+  "_說明": "標配房型：由空間範本組合而成。可用 area_ping 覆寫面積、add_appliances / remove_appliances 增減家電、appliance_overrides 覆寫家電參數、count 一次建立多個相同空間。熱水器改用瓦斯時，把 water_heater 的 enabled 設為 false。",
+  "name": "標配房型（3 房 2 衛）",
+  "occupants": 4,
+  "spaces": [
+    {"id": "master_bedroom", "name": "主臥", "template": "bedroom", "area_ping": 5,
+     "appliance_overrides": {"air_conditioner": {"power_w": 1100}}},
+    {"id": "bedroom_1", "name": "次臥 1", "template": "bedroom", "area_ping": 4,
+     "add_appliances": ["computer"]},
+    {"id": "bedroom_2", "name": "次臥 2", "template": "bedroom", "area_ping": 3.5},
+    {"id": "living_room", "name": "客廳", "template": "living_room", "area_ping": 8},
+    {"id": "kitchen", "name": "廚房", "template": "kitchen", "area_ping": 3},
+    {"id": "bathroom_1", "name": "浴室 1", "template": "bathroom", "area_ping": 1.5},
+    {"id": "bathroom_2", "name": "浴室 2", "template": "bathroom", "area_ping": 1.5,
+     "remove_appliances": ["bath_heater"]},
+    {"id": "utility", "name": "公共設備", "template": "utility",
+     "appliance_overrides": {"water_heater": {"enabled": true}}}
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "_說明": "家電目錄：每種家電的預設名稱、功率（W）與負載類型。load_type：essential=必要、adjustable=可調、shiftable=可移轉。功率為運轉時平均功率，可在範本或房屋設定中覆寫。",
+  "air_conditioner": {"name": "冷氣", "power_w": 800, "load_type": "adjustable"},
+  "lighting":        {"name": "照明", "power_w": 30, "load_type": "adjustable"},
+  "computer":        {"name": "電腦", "power_w": 300, "load_type": "adjustable"},
+  "tv":              {"name": "電視", "power_w": 150, "load_type": "adjustable"},
+  "dehumidifier":    {"name": "除濕機", "power_w": 250, "load_type": "adjustable"},
+  "router":          {"name": "網路分享器", "power_w": 15, "load_type": "essential"},
+  "camera":          {"name": "監視器", "power_w": 10, "load_type": "essential"},
+  "refrigerator":    {"name": "冰箱", "power_w": 50, "load_type": "essential"},
+  "range_hood":      {"name": "排油煙機", "power_w": 150, "load_type": "adjustable"},
+  "rice_cooker":     {"name": "電鍋", "power_w": 800, "load_type": "adjustable"},
+  "microwave":       {"name": "微波爐", "power_w": 1200, "load_type": "adjustable"},
+  "exhaust_fan":     {"name": "抽風機", "power_w": 30, "load_type": "adjustable"},
+  "bath_heater":     {"name": "暖風機", "power_w": 1500, "load_type": "adjustable"},
+  "washer":          {"name": "洗衣機", "power_w": 500, "load_type": "shiftable"},
+  "dryer":           {"name": "烘衣機", "power_w": 1200, "load_type": "shiftable"},
+  "water_heater":    {"name": "電熱水器", "power_w": 4000, "load_type": "shiftable"}
+}

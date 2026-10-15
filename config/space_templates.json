@@ -1,0 +1,32 @@
+{
+  "_說明": "空間範本：每種空間的預設面積（坪）與預設家電。家電可寫成字串（用目錄預設值），或寫成物件覆寫部分欄位。",
+  "bedroom": {
+    "name": "臥室",
+    "default_area_ping": 4,
+    "appliances": ["air_conditioner", "lighting"]
+  },
+  "bathroom": {
+    "name": "浴室",
+    "default_area_ping": 1.5,
+    "appliances": [{"id": "lighting", "power_w": 15}, "exhaust_fan", "bath_heater"]
+  },
+  "living_room": {
+    "name": "客廳",
+    "default_area_ping": 8,
+    "appliances": [
+      {"id": "air_conditioner", "power_w": 1500},
+      {"id": "lighting", "power_w": 60},
+      "tv", "dehumidifier", "router", "camera"
+    ]
+  },
+  "kitchen": {
+    "name": "廚房",
+    "default_area_ping": 3,
+    "appliances": ["refrigerator", "lighting", "range_hood", "rice_cooker", "microwave"]
+  },
+  "utility": {
+    "name": "公共設備",
+    "default_area_ping": 0,
+    "appliances": ["washer", "dryer", "water_heater"]
+  }
+}
