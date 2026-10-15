@@ -1,0 +1,13 @@
+# 虛擬環境
+.venv/
+# Python 快取
+__pycache__/
+*.pyc
+.pytest_cache/
+# Streamlit 本機設定（可能含金鑰）
+.streamlit/secrets.toml
+# 編輯器與系統檔
+.vscode/
+.idea/
+Thumbs.db
+.DS_Store
