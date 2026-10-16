@@ -51,7 +51,7 @@ class SpaceGeometry:
     daylight: bool
 
     @classmethod
-    def from_space(cls, space: Space, params: dict) -> "SpaceGeometry":
+    def from_space(cls, space: Space, params: dict) -> SpaceGeometry:
         g = params["geometry"]
         t = g["by_template"][space.template]
         floor = space.area_ping * g["ping_to_m2"]
@@ -398,7 +398,7 @@ class LoadModel:
         return result
 
     @staticmethod
-    def _cooled_room_temp(load: CoolingLoad, result: "ACResult", t_set: float, t_prev: float,
+    def _cooled_room_temp(load: CoolingLoad, result: ACResult, t_set: float, t_prev: float,
                           ua: float, capacity_kj_k: float, on: float) -> float:
         """冷氣運轉這小時結束時的室溫。
 

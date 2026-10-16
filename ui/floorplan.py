@@ -64,7 +64,7 @@ def auto_layout(settings: dict, templates: dict) -> dict[str, dict]:
     for row in rows:
         row.sort(key=lambda t: TEMPLATE_ORDER.index(t[0]["template"]) if t[0]["template"] in TEMPLATE_ORDER else 99)
         x = 0.0
-        for s, w, d in row:
+        for s, w, _ in row:
             layout[s["id"]] = {"x": round(x, 2), "y": round(y, 2), "w": w}
             x += w
         y += max((d for _, _, d in row), default=0)

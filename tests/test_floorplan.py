@@ -5,9 +5,21 @@ from datetime import date
 import pytest
 
 from core.models import load_space_templates
-from ui.floorplan import (PING_TO_M2, add_appliance, apply_remote, auto_layout, build_payload, ensure_layout,
-                          move_appliance, move_room, remote_command, remove_appliance, room_at, room_dims,
-                          set_room_size)
+from ui.floorplan import (
+    PING_TO_M2,
+    add_appliance,
+    apply_remote,
+    auto_layout,
+    build_payload,
+    ensure_layout,
+    move_appliance,
+    move_room,
+    remote_command,
+    remove_appliance,
+    room_at,
+    room_dims,
+    set_room_size,
+)
 from ui.settings import build_analyzer, default_settings, sim_key
 
 T = load_space_templates()

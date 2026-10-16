@@ -52,6 +52,7 @@ hems/
 ├── run_app.py         # 一鍵啟動：桌面視窗（pywebview）或瀏覽器；VS Code 按 F5、雙擊 start_hems.bat 或桌面捷徑
 ├── assets/            # 程式圖示（scripts/make_icon.py 產生）；桌面捷徑由 scripts/create_shortcut.py 建立
 ├── .vscode/           # VS Code 啟動設定（F5）與虛擬環境設定
+├── .github/workflows/ # GitHub Actions：push 時自動執行 ruff 與 pytest（ruff 設定在 ruff.toml）
 ├── ui/                # 介面：settings.py（設定 ↔ 核心模組）、context.py（各頁共用資料與快取）、account.py（登入、設定檔、自動存檔）、
 │                      #   theme.py（科技感樣式、KPI 卡、比較條）、charts.py（Altair 互動圖表）、family.py（家庭成員）、usage.py（使用紀錄與預測計算）、insights.py（整月每日資料與數據分析建議）、
 │                      #   floorplan.py + floorplan_frontend/（智慧平面圖自訂元件：拖曳家電、遙控器）、
@@ -137,7 +138,7 @@ hems/
 ## 優化方案（全部 15 項都做；不訂日期，照進度做）
 標示（夜間）＝夜間自動任務可做；（白天工作負責）＝需要改 core 演算法、網路或安裝新套件，由白天工作處理。
 夜間任務需要的套件已預先安裝：scikit-learn、ruff。
-- [ ] 1. D1 ruff 程式碼檢查 + D2 GitHub Actions 自動測試與徽章（夜間）
+- [x] 1. D1 ruff 程式碼檢查 + D2 GitHub Actions 自動測試與徽章（夜間）
 - [x] 2. B1a 下載並整理台電公開資料（全國住宅每戶平均月用電 2018–2026、台中住宅總用電 2016–2026，data/public/）
 - [ ] 3. B1b 機器學習用電預測：物理模擬 + scikit-learn 梯度提升樹修正殘差的混合模型，與純物理、純 ML 比較
       （時間序列交叉驗證；依賴 B1a）（夜間）

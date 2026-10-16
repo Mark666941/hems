@@ -74,7 +74,7 @@ def start_server(port: int) -> subprocess.Popen:
     output = None
     if not HAS_CONSOLE:                      # 沒有命令視窗：伺服器訊息寫入記錄檔
         LOG_PATH.parent.mkdir(exist_ok=True)
-        output = open(LOG_PATH, "w", encoding="utf-8")
+        output = open(LOG_PATH, "w", encoding="utf-8")   # noqa: SIM115 伺服器執行期間都要寫入，不能用 with 關閉
     return subprocess.Popen(
         [sys.executable, "-m", "streamlit", "run", str(ROOT / "app.py"),
          "--server.port", str(port), "--server.address", "localhost",   # 只接受本機連線

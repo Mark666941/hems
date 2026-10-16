@@ -238,7 +238,7 @@ class Simulator:
     # ----- 多日推演 -----
 
     def run_month(self, year: int, month: int, plan_id: str = "tou_2",
-                  control: ControlPlan | None = None) -> "MonthResult":
+                  control: ControlPlan | None = None) -> MonthResult:
         days = [date(year, month, d) for d in range(1, calendar.monthrange(year, month)[1] + 1)]
         return MonthResult(self, [self.run(d, plan_id, control) for d in days])
 

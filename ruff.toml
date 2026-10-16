@@ -1,0 +1,20 @@
+# ruff 程式碼檢查設定（python -m ruff check .）；GitHub Actions 每次 push 也會執行
+target-version = "py311"
+line-length = 120
+extend-exclude = ["ui/floorplan_frontend"]
+
+[lint]
+# E/W：PEP 8 基本格式、F：Pyflakes（未使用的 import、未定義的名稱）、I：import 排序、
+# UP：新版 Python 寫法、B：常見錯誤（bugbear）、SIM：可簡化的寫法
+select = ["E", "W", "F", "I", "UP", "B", "SIM"]
+ignore = [
+    "E501",   # 中文註解與介面文字較長，行長交給人判斷
+    "SIM108", # if-else 改三元運算子不一定比較好讀
+    "B905",   # zip(strict=) 會改變執行行為（長度不同時丟例外），不為了檢查而改
+]
+
+[lint.isort]
+combine-as-imports = true
+
+[lint.per-file-ignores]
+"tests/*" = ["B018"]   # 測試中刻意只取值觸發例外

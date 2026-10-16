@@ -5,8 +5,18 @@ import streamlit as st
 
 from ui.context import AppContext, room_comfort, update_settings
 from ui.family import add_member, move_person, person_states, remove_member, rename_member, set_member_times
-from ui.floorplan import (ADDABLE, add_appliance, build_payload, default_spot, floorplan, move_appliance, move_room,
-                          remote_command, remove_appliance, room_dims)
+from ui.floorplan import (
+    ADDABLE,
+    add_appliance,
+    build_payload,
+    default_spot,
+    floorplan,
+    move_appliance,
+    move_room,
+    remote_command,
+    remove_appliance,
+    room_dims,
+)
 from ui.theme import page_header
 
 

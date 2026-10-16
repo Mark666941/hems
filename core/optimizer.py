@@ -106,12 +106,12 @@ class ModeSchedule:
     name: str
 
     @classmethod
-    def single(cls, mode: Mode) -> "ModeSchedule":
+    def single(cls, mode: Mode) -> ModeSchedule:
         return cls([mode.id] * 24, mode.name)
 
     @classmethod
     def switch(cls, modes: dict[str, Mode], day_mode: str, night_mode: str,
-               night_start: int = 23, night_end: int = 7) -> "ModeSchedule":
+               night_start: int = 23, night_end: int = 7) -> ModeSchedule:
         by_hour = [night_mode if _in_window(h, night_start, night_end) else day_mode for h in range(24)]
         name = f"{modes[day_mode].name} → {night_start:02d}:00 {modes[night_mode].name}"
         return cls(by_hour, name)
@@ -504,6 +504,7 @@ class Optimizer:
         模式依 plan_id 的電價最佳化；同一份用電也換算成其他方案的電費，看值不值得換方案。
         回傳（比較表, {模式名稱: 每日 SimulationResult 列表}）。"""
         import calendar
+
         from core.simulator import MonthResult
 
         days = [date(year, month, d) for d in range(1, calendar.monthrange(year, month)[1] + 1)]

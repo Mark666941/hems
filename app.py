@@ -21,9 +21,17 @@ from core.models import load_space_templates
 from core.optimizer import MODE_ORDER, ModeSchedule
 from ui import charts
 from ui.account import account_dialog, autosave, ensure_session
+from ui.context import (
+    WEEKDAY_NAMES,
+    AppContext,
+    available_dates,
+    get_analyzer,
+    month_bills,
+    run_schedule,
+    run_with_remote,
+    update_settings,
+)
 from ui.family import apply_person_overrides
-from ui.context import (WEEKDAY_NAMES, AppContext, available_dates, get_analyzer, month_bills, run_schedule,
-                        run_with_remote, update_settings)
 from ui.floorplan import ensure_layout, room_dims, set_room_size
 from ui.pages import about, analysis, forecast, home, plan, settings as settings_page
 from ui.settings import default_settings, sim_key

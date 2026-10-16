@@ -5,8 +5,15 @@ from pathlib import Path
 import pytest
 from streamlit.testing.v1 import AppTest
 
-from ui.settings import (apply_routine_times, apply_spaces_table, build_analyzer, default_settings,
-                         routine_times, spaces_table, to_key)
+from ui.settings import (
+    apply_routine_times,
+    apply_spaces_table,
+    build_analyzer,
+    default_settings,
+    routine_times,
+    spaces_table,
+    to_key,
+)
 
 
 @pytest.fixture

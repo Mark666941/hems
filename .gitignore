@@ -4,6 +4,7 @@
 __pycache__/
 *.pyc
 .pytest_cache/
+.ruff_cache/
 # Streamlit 本機設定（可能含金鑰）
 .streamlit/secrets.toml
 # 編輯器與系統檔

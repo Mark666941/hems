@@ -1,5 +1,9 @@
 # 居家能源管理系統（HEMS）模擬與最佳化平台
 
+[![tests](https://github.com/Mark666941/hems/actions/workflows/tests.yml/badge.svg)](https://github.com/Mark666941/hems/actions/workflows/tests.yml)
+![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)
+[![Ruff](https://img.shields.io/badge/lint-ruff-261230)](https://docs.astral.sh/ruff/)
+
 以**物理模型**推演一個家庭 24 小時、每個房間的冷房負載與家電用電，並以**最佳化**在電費與舒適度之間取得平衡；
 提供互動式介面，讓使用者客製化自己的房型、家電與作息，比較不同運轉模式的結果。
 

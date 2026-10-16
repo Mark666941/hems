@@ -1,0 +1,25 @@
+# GitHub Actions：每次 push 或 pull request 自動執行程式碼檢查（ruff）與全部測試（pytest）
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - name: 安裝套件
+        run: pip install -r requirements.txt
+      - name: 程式碼檢查（ruff）
+        run: python -m ruff check .
+      - name: 測試（pytest，含 Streamlit AppTest 各頁面）
+        run: python -m pytest -q -p no:warnings

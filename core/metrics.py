@@ -17,7 +17,7 @@ from pathlib import Path
 import pandas as pd
 
 from core.load_model import humidity_ratio, saturation_pressure_kpa
-from core.optimizer import MODE_ORDER, Optimizer
+from core.optimizer import Optimizer
 from core.simulator import ControlPlan, SimulationResult
 
 CONFIG_DIR = Path(__file__).resolve().parent.parent / "config"
@@ -222,7 +222,7 @@ class Analyzer:
         table, scenarios = self.opt.compare_month(year, month, plan_id)
         plan_name = self.sim.tariff.plans[plan_id]["name"]
         extra = []
-        for name, days in scenarios.items():
+        for days in scenarios.values():
             pmv = [self.pmv_stats(r) for r in days]
             kwh = sum(r.total_kwh for r in days)
             extra.append({

@@ -4,8 +4,16 @@ from datetime import date
 import pytest
 
 from core.schedule import Schedule
-from ui.family import (add_member, apply_person_overrides, hour_location, move_person, person_states, remove_member,
-                       rename_member, set_member_times)
+from ui.family import (
+    add_member,
+    apply_person_overrides,
+    hour_location,
+    move_person,
+    person_states,
+    remove_member,
+    rename_member,
+    set_member_times,
+)
 from ui.settings import build_analyzer, build_house, default_settings, routine_times
 
 DAY = date(2026, 7, 20)   # 週一

@@ -8,8 +8,15 @@ import pandas as pd
 import streamlit as st
 
 from ui.context import AppContext, update_settings
-from ui.settings import (ROUTINE_LABELS, apply_routine_times, apply_spaces_table, build_house, default_settings,
-                         routine_times, spaces_table)
+from ui.settings import (
+    ROUTINE_LABELS,
+    apply_routine_times,
+    apply_spaces_table,
+    build_house,
+    default_settings,
+    routine_times,
+    spaces_table,
+)
 from ui.theme import page_header
 
 
