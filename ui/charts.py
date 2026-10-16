@@ -108,6 +108,26 @@ def temp_vs_ac(daily: pd.DataFrame) -> alt.LayerChart:
     return (points + lines).properties(height=300)
 
 
+def anomaly_chart(scored: pd.DataFrame, k: float) -> alt.LayerChart:
+    """異常偵測：一個通道逐時「實測 − 模擬」的誤差；灰帶為正常範圍（中位數 ± kσ），紅點為異常。"""
+    data = scored[["date", "hour", "measured_kwh", "simulated_kwh", "residual", "center", "scale", "z"]].copy()
+    data["time"] = pd.to_datetime(data["date"].astype(str)) + pd.to_timedelta(data["hour"], unit="h")
+    data["lo"], data["hi"] = data["center"] - k * data["scale"], data["center"] + k * data["scale"]
+    data["異常"] = data["z"].abs() > k
+    x = alt.X("time:T", title="時間", axis=alt.Axis(format="%m/%d %H時"))
+    tooltip = [alt.Tooltip("time:T", title="時間", format="%m/%d %H:00"),
+               alt.Tooltip("measured_kwh:Q", title="實測（kWh）", format=".2f"),
+               alt.Tooltip("simulated_kwh:Q", title="模擬（kWh）", format=".2f"),
+               alt.Tooltip("residual:Q", title="誤差（kWh）", format="+.2f"),
+               alt.Tooltip("z:Q", title="偏離（σ）", format="+.1f")]
+    band = alt.Chart(data).mark_area(color="#8a94a6", opacity=0.18).encode(x=x, y="lo:Q", y2="hi:Q")
+    line = alt.Chart(data).mark_line(color="#2a78d6", strokeWidth=1.4).encode(
+        x=x, y=alt.Y("residual:Q", title="實測 − 模擬（kWh）"), tooltip=tooltip)
+    points = alt.Chart(data[data["異常"]]).mark_circle(color="#eb6834", size=70).encode(
+        x=x, y="residual:Q", tooltip=tooltip)
+    return (band + line + points).properties(height=300)
+
+
 def hourly_stacked(result: SimulationResult) -> alt.LayerChart:
     """全屋逐時用電，依用電分類堆疊；灰底為尖峰時段。"""
     wide = result.hourly_by_category()

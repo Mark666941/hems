@@ -9,14 +9,15 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from datetime import date
+from pathlib import Path
 
 import pandas as pd
 import streamlit as st
 
-from core.data_source import CwaCsvWeatherSource
-from core.metrics import Analyzer
+from core.data_source import CsvMeterSource, CwaCsvWeatherSource
+from core.metrics import Analyzer, compare_with_meter
 from core.optimizer import ModeSchedule
-from core.simulator import ControlPlan, SimulationResult
+from core.simulator import ControlPlan, SimulatedMeterSource, SimulationResult
 from ui import insights, usage
 from ui.floorplan import apply_remote
 from ui.settings import build_analyzer
@@ -84,6 +85,17 @@ def month_bills(_analyzer: Analyzer, settings_key: str, year: int, month: int) -
 @st.cache_data
 def available_dates() -> list[date]:
     return CwaCsvWeatherSource().available_dates()
+
+
+@st.cache_data(max_entries=4, show_spinner="比對實測與模擬…")
+def meter_comparison(_analyzer: Analyzer, settings_key: str, path: str) -> pd.DataFrame:
+    """異常偵測：實測電表 CSV 與模擬（一般習慣）的逐時對照表；只比對有天氣資料的日子。"""
+    measured = CsvMeterSource(Path(path))
+    simulated = SimulatedMeterSource(_analyzer.sim, control=_analyzer.opt.baseline_plan)
+    weather_days = set(available_dates())
+    days = [d for d in measured.available_dates() if d in weather_days]
+    detail, _ = compare_with_meter(measured, simulated, days, _analyzer.cfg["calibration"]["hourly"])
+    return detail
 
 
 @st.cache_data(max_entries=24, show_spinner="推演整月用電（預測用，約 2 秒）…")

@@ -1,18 +1,22 @@
-"""📊 分析：今日明細、模式比較、家電排程、室內環境、整月分析與建議。"""
+"""📊 分析：今日明細、模式比較、家電排程、室內環境、整月分析與建議、用電異常偵測。"""
 from __future__ import annotations
+
+from pathlib import Path
 
 import pandas as pd
 import streamlit as st
 
-from ui import charts, insights
-from ui.context import BASELINE, AppContext, analyze_month
+from ui import anomaly, charts, insights
+from ui.context import BASELINE, AppContext, analyze_month, meter_comparison
 from ui.theme import page_header, tips_card
+
+METER_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "meter"
 
 
 def render(ctx: AppContext) -> None:
     page_header("ANALYSIS · 分析", "用電明細與模式比較", [(f"📅 <b>{ctx.day}</b> {ctx.weekday}", ""),
                                                    (f"🎛️ {ctx.mode_schedule.name}", "")])
-    tabs = st.tabs(["今日明細", "模式比較", "家電排程", "室內環境", "整月分析與建議"])
+    tabs = st.tabs(["今日明細", "模式比較", "家電排程", "室內環境", "整月分析與建議", "異常偵測"])
     with tabs[0]:
         _today(ctx)
     with tabs[1]:
@@ -23,6 +27,8 @@ def render(ctx: AppContext) -> None:
         _climate(ctx)
     with tabs[4]:
         _month(ctx)
+    with tabs[5]:
+        _anomaly(ctx)
 
 
 def _scenarios(ctx: AppContext) -> dict:
@@ -118,6 +124,53 @@ def _climate(ctx: AppContext) -> None:
     c[2].metric("PMV 舒適比例", f"{m['PMV舒適比例(%)']:.0f}%", help="ISO 7730：|PMV| ≤ 0.5 的清醒人·時比例")
     c[3].metric("平均 PPD", f"{m['平均PPD(%)']:.1f}%", help="預測不滿意百分比，最低 5%")
     st.caption("以上舒適指標為全屋有冷氣空間的合計。冬季系統沒有暖氣，室溫主要受天氣影響。")
+
+
+def _anomaly(ctx: AppContext) -> None:
+    files = sorted(METER_DIR.glob("*.csv"))
+    st.caption("把智慧插座或電表的實測用電和模擬（一般習慣）的預測逐時比較，誤差超出統計門檻的時段標為異常。"
+               "門檻用穩健統計（中位數與 MAD），模型整體偏高或偏低不會被當成異常，只抓「突然不一樣」的時段。")
+    if not files:
+        st.info("data/meter/ 還沒有電表資料（格式見 data/meter/README.md）。", icon="🔌")
+        return
+    c1, c2 = st.columns([2, 1])
+    path = c1.selectbox("電表資料", files, format_func=lambda p: p.name, key="meter_file")
+    k = c2.slider("單一小時門檻（σ）", 2.0, 5.0, 3.0, 0.5, key="anomaly_k",
+                  help="誤差偏離中位數超過幾個標準差算異常；越小越敏感、誤報也越多")
+    if "synthetic" in path.name:
+        st.warning("這是示範用合成資料（模擬值加上冷氣 +15%、熱水器時間飄移、待機 30 W 與隨機波動），不是實測資料。",
+                   icon="🧪")
+    detail = meter_comparison(ctx.analyzer, ctx.key, str(path))
+    if detail.empty:
+        st.info("電表資料的日期沒有對應的天氣資料，無法比對。")
+        return
+    names = anomaly.channel_names(ctx.house)
+    scored, found = anomaly.detect(detail, k=k, names=names)
+    counts = found["類型"].value_counts()
+    c = st.columns(4)
+    c[0].metric("比對天數", f"{detail['date'].nunique()} 天")
+    c[1].metric("單一小時異常", f"{counts.get('單一小時', 0)} 筆")
+    c[2].metric("持續偏離", f"{counts.get('持續偏離', 0)} 段")
+    c[3].metric("整天偏離", f"{counts.get('整天偏離', 0)} 天")
+
+    channels = list(dict.fromkeys(scored["channel"]))
+    channel = st.selectbox("通道", channels, format_func=lambda ch: names.get(ch, ch), key="anomaly_channel")
+    part = scored[scored["channel"] == channel]
+    bias = float(part["center"].iloc[0])
+    st.markdown(f"**{names.get(channel, channel)}：實測 − 模擬**（灰帶＝正常範圍 中位數 ± {k:g}σ，橘點＝異常）｜"
+                f"系統性偏差 {bias:+.3f} kWh/時、σ = {float(part['scale'].iloc[0]):.3f} kWh")
+    st.altair_chart(charts.anomaly_chart(part, k), width="stretch")
+    if found.empty:
+        st.success("沒有偵測到異常。", icon="✅")
+    else:
+        st.dataframe(found.drop(columns=["channel"]), hide_index=True, width="stretch", column_config={
+            "實測(kWh)": st.column_config.NumberColumn(format="%.2f"),
+            "模擬(kWh)": st.column_config.NumberColumn(format="%.2f"),
+            "差異(kWh)": st.column_config.NumberColumn(format="%+.2f"),
+            "偏離(σ)": st.column_config.NumberColumn(format="%+.1f")})
+    if abs(bias) > 0.05:
+        st.caption(f"這個通道的實測整體{'高' if bias > 0 else '低'}於模擬約 {abs(bias):.2f} kWh/時，屬於模型的系統性偏差，"
+                   "可以用「預測」頁的帳單修正或調整家電功率校正，不算異常。")
 
 
 def _month(ctx: AppContext) -> None:
