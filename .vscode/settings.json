@@ -1,0 +1,7 @@
+{
+  // 使用專案的虛擬環境，按 F5 或執行測試時不用另外選 Python
+  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe",
+  "python.testing.pytestEnabled": true,
+  "python.testing.pytestArgs": ["tests"],
+  "files.encoding": "utf8"
+}

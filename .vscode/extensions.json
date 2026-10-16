@@ -1,0 +1,4 @@
+{
+  // 開啟專案時，VS Code 會建議安裝這些擴充套件（按 F5 執行 Python 需要）
+  "recommendations": ["ms-python.python", "ms-python.debugpy"]
+}

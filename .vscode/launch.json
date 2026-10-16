@@ -1,0 +1,35 @@
+{
+  // 按 F5（或左側「執行與偵錯」）選擇要啟動的項目
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "HEMS 介面（桌面視窗）",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/run_app.py",
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "HEMS 介面（瀏覽器）",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/run_app.py",
+      "args": ["--browser"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": true
+    },
+    {
+      "name": "執行全部測試",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "pytest",
+      "args": ["-q"],
+      "cwd": "${workspaceFolder}",
+      "console": "integratedTerminal",
+      "justMyCode": true
+    }
+  ]
+}

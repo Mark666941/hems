@@ -43,6 +43,15 @@ def test_invalid_settings_show_error_instead_of_crash(app):
     assert any("master_bedroom" in e.value for e in app.error)
 
 
+def test_launcher_finds_free_port():
+    import socket
+
+    import run_app
+    port = run_app.free_port()
+    with socket.socket() as s:        # 拿到的連接埠確實可以使用
+        s.bind(("127.0.0.1", port))
+
+
 # ---------- 設定轉換 ----------
 
 def test_settings_key_is_stable():

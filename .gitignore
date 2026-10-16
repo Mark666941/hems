@@ -7,7 +7,10 @@ __pycache__/
 # Streamlit 本機設定（可能含金鑰）
 .streamlit/secrets.toml
 # 編輯器與系統檔
-.vscode/
+.vscode/*
+!.vscode/launch.json
+!.vscode/settings.json
+!.vscode/extensions.json
 .idea/
 Thumbs.db
 .DS_Store
