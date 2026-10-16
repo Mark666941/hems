@@ -15,10 +15,11 @@ class Period(Enum):
     PEAK = "peak"
     SEMI_PEAK = "semi_peak"
     OFF_PEAK = "off_peak"
+    FLAT = "flat"   # 累進電價：不分時段
 
     @property
     def label(self) -> str:
-        return {"peak": "尖峰", "semi_peak": "半尖峰", "off_peak": "離峰"}[self.value]
+        return {"peak": "尖峰", "semi_peak": "半尖峰", "off_peak": "離峰", "flat": "不分時段"}[self.value]
 
 
 class Tariff:
@@ -58,11 +59,23 @@ class Tariff:
         by_year = days["by_year"].get(str(day.year), {})
         return any(day.isoformat() in dates for dates in by_year.values())
 
+    def marginal_progressive_rate(self, day: date, kwh_per_month: float | None = None) -> float:
+        """累進電價的邊際電價：月用電落在哪個級距，每多用一度就付該級距的費率。"""
+        plan = self.plans["progressive"]
+        kwh = plan["marginal_estimate_kwh_per_month"] if kwh_per_month is None else kwh_per_month
+        season = "summer" if self.is_summer(day) else "non_summer"
+        for tier in plan["tiers"]:
+            if tier["up_to"] is None or kwh <= tier["up_to"]:
+                return tier[season]
+        raise ValueError("累進電價級距設定錯誤")
+
     def hourly_prices(self, day: date, plan_id: str = "tou_2") -> pd.DataFrame:
-        """回傳 24 列：hour、period（尖峰/半尖峰/離峰）、price（元/度）。"""
+        """回傳 24 列：hour、period（尖峰/半尖峰/離峰/不分時段）、price（元/度）。
+        累進電價各時段相同，以邊際電價表示。"""
         plan = self.plans[plan_id]
-        if plan["type"] != "time_of_use":
-            raise ValueError(f"{plan['name']} 不分時段，無法查詢每小時電價")
+        if plan["type"] == "progressive":
+            rate = self.marginal_progressive_rate(day)
+            return pd.DataFrame({"hour": range(24), "period": [Period.FLAT] * 24, "price": [rate] * 24})
         season = "summer" if self.is_summer(day) else "non_summer"
         day_type = "off_peak_day" if self.is_off_peak_day(day) else "weekday"
 

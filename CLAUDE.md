@@ -42,7 +42,7 @@ hems/
 │   ├── load_model.py  # 冷房負載、冷氣耗電、其他家電耗電
 │   ├── simulator.py   # 24 小時推演引擎（ControlPlan → SimulationResult）
 │   ├── charts.py      # 靜態圖表（matplotlib）
-│   ├── optimizer.py   # 四種模式的最佳化
+│   ├── optimizer.py   # 四種模式的最佳化（modes.json 參數 → ControlPlan）
 │   └── metrics.py     # 指標計算與模式比較
 ├── app.py             # Streamlit 前端
 ├── docs/images/       # 里程碑圖表（README 用）
@@ -106,7 +106,7 @@ hems/
 - [x] 階段 3：作息模型 → 24 小時 × 各空間使用時段表
 - [x] 階段 4：負載與耗電模型 → 給定空間、天氣、時間、設定溫度，算出該小時耗電
 - [x] 階段 5：基準推演引擎（無最佳化）→ 24 小時用電曲線【里程碑 1】
-- [ ] 階段 6：四種模式與最佳化 → 各模式 24 小時推演結果【里程碑 2】
+- [x] 階段 6：四種模式與最佳化 → 各模式 24 小時推演結果【里程碑 2】
 - [ ] 階段 7：指標與模式比較 → 比較表與圖
 - [ ] 階段 8：Streamlit 前端並部署【里程碑 3】
 - [ ] 階段 9：README、Demo 影片、備審說明

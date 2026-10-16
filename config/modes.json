@@ -1,0 +1,138 @@
+{
+  "_說明": "四種模式不是寫死的規則，而是同一套最佳化（最小化「電費 + 舒適權重 × 不舒適度」）搭配不同參數。night 區塊為夜間（night_hours）覆寫的參數；未寫的參數沿用 params。 sleep_aware：睡眠時段是否另外決定冷氣設定（一般習慣是整天同一個設定溫度）；follow_sleep_curve：睡眠時設定溫度是否跟著睡眠曲線逐步調高。冷氣是否開啟以「連續有人的時段」整段判斷：該時段室外平均溫度低於 ac_min_outdoor_c 就開窗不開冷氣（避免每小時開開關關）。 task_demand_weight_per_kw：安排可移轉負載時，每 1 kW 的最大同時負載加計多少元的懲罰，讓電費相同時大功率家電錯開運轉，降低最大需量。",
+  "comfort": {
+    "_說明": "使用者的舒適偏好（人體的需求，與模式無關），也是比較各模式舒適度的共同基準。依季節衣著不同分兩組：冷房季節衣著約 0.5 clo、非冷房季節約 1.0 clo，睡眠時有棉被。sleep_curve：入睡後代謝率下降（約 0.7 met），可接受溫度逐步上升；起床前 return_before_wake_h 小時回到原溫度（只用於冷房季節）。evaluation_deadband_c：比較各模式時，偏離偏好溫度在此範圍內不算不舒適；±1.5°C 約對應一般室內條件下 PMV ±0.5（ASHRAE 55 建議的舒適範圍）的溫度寬度（近似）。",
+    "seasons": {
+      "cooling": {
+        "months": [
+          5,
+          6,
+          7,
+          8,
+          9,
+          10
+        ],
+        "preferred_awake_c": 26.0,
+        "preferred_sleep_c": 26.0,
+        "sleep_curve": {
+          "rise_c_per_h": 0.5,
+          "max_rise_c": 2.0,
+          "return_before_wake_h": 1
+        }
+      },
+      "heating": {
+        "months": [
+          11,
+          12,
+          1,
+          2,
+          3,
+          4
+        ],
+        "preferred_awake_c": 22.0,
+        "preferred_sleep_c": 20.0
+      }
+    },
+    "evaluation_deadband_c": 1.5
+  },
+  "task_demand_weight_per_kw": 2.0,
+  "modes": {
+    "saving": {
+      "name": "省電模式",
+      "description": "以最低耗能維持必要設施運作與監控：放寬舒適範圍、無人空間關閉、可移轉負載全部移至離峰。",
+      "params": {
+        "setpoint_range_c": [
+          26,
+          29
+        ],
+        "comfort_weight": 0.3,
+        "deadband_c": 1.5,
+        "ac_min_outdoor_c": 27,
+        "precool_h": 0,
+        "sleep_aware": true,
+        "follow_sleep_curve": true,
+        "appliance_factors": {
+          "lighting": 0.7,
+          "dehumidifier": 0.0
+        },
+        "shift_loads": true,
+        "quiet_during_sleep": false
+      }
+    },
+    "normal": {
+      "name": "正常模式",
+      "description": "舒適與用電平衡：在偏好溫度附近選擇最划算的設定，可移轉負載在不吵到睡眠的前提下移到離峰。",
+      "params": {
+        "setpoint_range_c": [
+          25,
+          28
+        ],
+        "comfort_weight": 2.0,
+        "deadband_c": 0.5,
+        "ac_min_outdoor_c": 25,
+        "precool_h": 0,
+        "sleep_aware": false,
+        "follow_sleep_curve": false,
+        "appliance_factors": {},
+        "shift_loads": true,
+        "quiet_during_sleep": true
+      }
+    },
+    "performance": {
+      "name": "效能模式",
+      "description": "使用中的空間以舒適度為優先：維持偏好溫度、回家前預冷，家電依使用者習慣時間運轉不移轉。",
+      "params": {
+        "setpoint_range_c": [
+          23,
+          27
+        ],
+        "comfort_weight": 20.0,
+        "deadband_c": 0.0,
+        "ac_min_outdoor_c": 24,
+        "precool_h": 1,
+        "sleep_aware": false,
+        "follow_sleep_curve": false,
+        "appliance_factors": {},
+        "shift_loads": false,
+        "quiet_during_sleep": true
+      }
+    },
+    "sleep": {
+      "name": "舒眠模式",
+      "description": "白天同正常模式；睡眠時段臥室優先，入睡後冷氣依睡眠曲線逐步調高、起床前回溫，夜間其他空間降載。",
+      "params": {
+        "setpoint_range_c": [
+          25,
+          28
+        ],
+        "comfort_weight": 2.0,
+        "deadband_c": 0.5,
+        "ac_min_outdoor_c": 25,
+        "precool_h": 0,
+        "sleep_aware": false,
+        "follow_sleep_curve": false,
+        "appliance_factors": {},
+        "shift_loads": true,
+        "quiet_during_sleep": true
+      },
+      "night_hours": [
+        23,
+        7
+      ],
+      "night": {
+        "sleep_aware": true,
+        "setpoint_range_c": [
+          25,
+          29
+        ],
+        "comfort_weight": 3.0,
+        "follow_sleep_curve": true,
+        "appliance_factors": {
+          "lighting": 0.3,
+          "dehumidifier": 0.0,
+          "tv": 0.0
+        }
+      }
+    }
+  }
+}

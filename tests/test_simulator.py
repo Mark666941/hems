@@ -107,8 +107,9 @@ def test_winter_room_temperature_without_heating(sim):
 def test_shifting_tasks_to_off_peak_saves_money(sim, summer):
     shifted = sim.run(SUMMER, control=ControlPlan(default_setpoint=25,
                                                   task_starts={"water_heater": 1, "washer": 3}))
-    assert shifted.total_kwh == pytest.approx(summer.total_kwh)       # 用電量不變
-    assert shifted.energy_cost < summer.energy_cost                    # 電費下降
+    # 提早燒熱水要多付儲水桶散熱的耗電，但離峰電價便宜得多，電費仍下降
+    assert shifted.total_kwh > summer.total_kwh
+    assert shifted.energy_cost < summer.energy_cost
     assert shifted.kwh_by_period()["尖峰"] < summer.kwh_by_period()["尖峰"]
 
 

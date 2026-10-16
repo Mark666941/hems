@@ -71,7 +71,8 @@
     "progressive": {
       "name": "非時間電價（累進電價，住宅用）",
       "type": "progressive",
-      "_說明": "依每月總度數分段累進，不分時段；up_to 為該級距上限（度），null 表示以上全部。",
+      "_說明": "依每月總度數分段累進，不分時段；up_to 為該級距上限（度），null 表示以上全部。逐日推演與最佳化時，以 marginal_estimate_kwh_per_month（估計月用電）所在級距的費率作為「邊際電價」（每多用一度的電價，各時段相同）；月電費仍以整月實際用電累進計算。",
+      "marginal_estimate_kwh_per_month": 500,
       "tiers": [
         {"up_to": 120,  "summer": 1.78, "non_summer": 1.78},
         {"up_to": 330,  "summer": 2.55, "non_summer": 2.26},

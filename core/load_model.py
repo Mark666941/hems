@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from core.models import Appliance, House, Space
+from core.models import Appliance, House, LoadType, Space
 from core.schedule import Schedule
 
 CONFIG_DIR = Path(__file__).resolve().parent.parent / "config"
@@ -245,14 +245,14 @@ class LoadModel:
         fractions = self.schedule.presence(day_type, space.id, self._activities(rule["activities"]))
         geo_daylight = self.params["geometry"]["by_template"][space.template]["daylight"]
         threshold = self.params["lighting"]["daylight_threshold_w_m2"]
+        temps, rhs, solar = list(weather.temp_c), list(weather.rh_pct), list(weather.solar_mj_m2)
         result = []
         for h, frac in enumerate(fractions):
-            w = weather.iloc[h]
-            if appliance.id == "lighting" and geo_daylight and w.solar_mj_m2 * MJ_PER_HOUR_TO_W >= threshold:
+            if appliance.id == "lighting" and geo_daylight and solar[h] * MJ_PER_HOUR_TO_W >= threshold:
                 frac = 0.0
-            if "outdoor_below_c" in rule and w.temp_c >= rule["outdoor_below_c"]:
+            if "outdoor_below_c" in rule and temps[h] >= rule["outdoor_below_c"]:
                 frac = 0.0
-            if "outdoor_rh_above" in rule and w.rh_pct <= rule["outdoor_rh_above"]:
+            if "outdoor_rh_above" in rule and rhs[h] <= rule["outdoor_rh_above"]:
                 frac = 0.0
             if rule.get("not_cooling") and ac_on is not None:
                 frac = max(0.0, frac - ac_on[h])
@@ -269,25 +269,34 @@ class LoadModel:
 
     def space_hourly(self, space: Space, weather: pd.DataFrame, day_type: str,
                      setpoint_c: float | list[float] = 26.0,
-                     ac_on: list[float] | None = None) -> pd.DataFrame:
+                     ac_on: list[float] | None = None,
+                     appliance_factors: dict[str, list[float]] | None = None) -> pd.DataFrame:
         """某空間 24 小時的逐時結果：各家電耗電（W）、冷房負載組成、COP 等。
 
         weather：24 列，需有 temp_c、rh_pct、solar_mj_m2。
         setpoint_c：冷氣設定溫度，可為單一值或 24 小時列表。
         ac_on：每小時冷氣運轉比例（0–1）；None 時用「有人就開、室外涼爽時不開」。
+        appliance_factors：家電 id → 24 小時調整係數（0–1），例如照明調光 0.7、除濕機關閉 0。
+                           必要負載不可調整。
         """
         setpoints = [setpoint_c] * 24 if isinstance(setpoint_c, (int, float)) else list(setpoint_c)
         ac_unit = space.get_appliance("air_conditioner")
         has_ac = ac_unit is not None and ac_unit.enabled
         if ac_on is None:
             ac_on = self.default_ac_on(space, day_type, weather) if has_ac else [0.0] * 24
+        appliance_factors = appliance_factors or {}
 
         # 1. 一般家電（同時是室內發熱來源）
         appliance_w: dict[str, list[float]] = {}
         for a in space.appliances:
             if a.id == "air_conditioner" or a.id in self.params["shiftable_tasks"]:
                 continue
-            appliance_w[a.id] = self.appliance_hourly(a, space, weather, day_type, ac_on if has_ac else None)
+            hourly = self.appliance_hourly(a, space, weather, day_type, ac_on if has_ac else None)
+            if a.id in appliance_factors:
+                if a.load_type is LoadType.ESSENTIAL:
+                    raise ValueError(f"{a.name} 是必要負載，任何模式都不可調整")
+                hourly = [w * f for w, f in zip(hourly, appliance_factors[a.id])]
+            appliance_w[a.id] = hourly
         internal = [sum(v[h] for v in appliance_w.values()) for h in range(24)]
 
         # 2. 冷氣
@@ -430,8 +439,34 @@ class LoadModel:
             energy_kwh = kg * 4.186 * (spec["supply_temp_c"] - t_cold) / 3600 / spec["efficiency"]
             tasks.append({"appliance": "water_heater", "space": space.id, "name": a.name,
                           "power_w": a.power_w, "duration_h": energy_kwh * 1000 / a.power_w,
-                          "energy_kwh": energy_kwh, "default_start": spec["default_start"]})
+                          "energy_kwh": energy_kwh, "base_energy_kwh": energy_kwh,
+                          "default_start": spec["default_start"],
+                          # 熱水要在第一個人洗澡前燒好；燒好到使用之間有散熱損失
+                          "ready_by": self.schedule.first_activity_time(day_type, "shower"),
+                          "standby_loss_per_h": spec["standby_loss_per_h"]})
         return tasks
+
+
+def place_task(task: dict, start: float | None = None) -> dict:
+    """決定可移轉工作的開始時間，回傳加上 start（與熱水器的等待時間、實際耗電）的新 dict。
+
+    電熱水器：燒好之後到第一個人洗澡前，儲水桶持續散熱，
+    需多燒 base × standby_loss_per_h × 等待時數。若來不及在洗澡前燒好，feasible = False。
+    """
+    start = task["default_start"] if start is None else start
+    placed = {**task, "start": start % 24, "feasible": True}
+    if "ready_by" not in task:
+        return placed
+    gap = (task["ready_by"] - start) % 24          # 從開始燒到需要用熱水的時間
+    energy = task["base_energy_kwh"]
+    for _ in range(5):                               # 耗電量和等待時間互相影響，迭代幾次即收斂
+        duration = energy * 1000 / task["power_w"]
+        wait = max(0.0, gap - duration)
+        energy = task["base_energy_kwh"] * (1 + task["standby_loss_per_h"] * wait)
+    duration = energy * 1000 / task["power_w"]
+    placed.update(energy_kwh=energy, duration_h=duration, wait_h=max(0.0, gap - duration),
+                  feasible=duration <= gap + 1e-9)
+    return placed
 
 
 def task_hourly(task: dict, start_hour: float | None = None) -> list[float]:

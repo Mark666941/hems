@@ -116,6 +116,57 @@ def plot_day(result: SimulationResult, path: Path) -> Path:
     return path
 
 
+MODE_COLORS = {"基準（一般習慣）": INK_2, "省電模式": SERIES["冷氣"], "正常模式": SERIES["熱水與洗烘"],
+               "效能模式": SERIES["其他家電"], "舒眠模式": SERIES["必要負載"]}
+
+
+def plot_modes(table, results: dict, path: Path) -> Path:
+    """四種模式比較：逐時用電曲線（上）＋ 流動電費、舒適度（下方兩張小圖）。
+    基準情境用中性灰，四種模式依序取類別色；顏色跟著模式走。"""
+    fig = plt.figure(figsize=(11, 8.5))
+    grid = fig.add_gridspec(2, 2, height_ratios=[3, 2], hspace=0.5, wspace=0.3)
+    ax = fig.add_subplot(grid[0, :])
+    ax_cost = fig.add_subplot(grid[1, 0])
+    ax_comfort = fig.add_subplot(grid[1, 1])
+
+    first = None
+    for key, r in results.items():
+        sim_result = r if isinstance(r, SimulationResult) else r.result
+        first = first or sim_result
+        name = table.loc[list(results).index(key), "模式"]
+        ax.plot(range(24), sim_result.hourly["kwh"], color=MODE_COLORS[name], linewidth=2,
+                label=name, zorder=3, marker="o", markersize=3)
+    _shade_periods(ax, first.hourly)
+    ax.set_xlim(-0.5, 23.5)
+    ax.set_ylim(0, None)
+    ax.set_xticks(range(24), [f"{h:02d}" for h in range(24)])
+    ax.set_xlabel("時")
+    ax.set_ylabel("用電（kWh）")
+    day_name = "平日" if first.day_type == "weekday" else "假日"
+    ax.set_title(f"{first.day}（{day_name}）四種模式逐時用電比較", loc="left", fontsize=12, pad=40)
+    ax.legend(loc="lower left", bbox_to_anchor=(0, 1.06), ncols=5, frameon=False, fontsize=9)
+
+    names = list(table["模式"])
+    colors = [MODE_COLORS[n] for n in names]
+    short = [n.replace("（一般習慣）", "").replace("模式", "") for n in names]
+    for axis, column, fmt, title in (
+        (ax_cost, "流動電費(元)", "{:.0f} 元", "流動電費（元）"),
+        (ax_comfort, "平均溫差(°C)", "{:.2f}°C", "平均溫差（越小越舒適）"),
+    ):
+        values = list(table[column])
+        bars = axis.bar(short, values, color=colors, width=0.6, zorder=3)
+        for bar, v in zip(bars, values):
+            axis.annotate(fmt.format(v), xy=(bar.get_x() + bar.get_width() / 2, v), xytext=(0, 3),
+                          textcoords="offset points", ha="center", va="bottom", fontsize=8.5, color=INK_2)
+        axis.set_ylim(0, max(values) * 1.2 if max(values) > 0 else 1)
+        axis.grid(axis="x", visible=False)
+        axis.set_title(title, loc="left", fontsize=11)
+
+    fig.savefig(path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    return path
+
+
 def plot_month(result: MonthResult, path: Path) -> Path:
     """整月每日用電（平日／假日）＋ 每日平均氣溫（上下兩張小圖，共用日期軸）。"""
     daily = result.daily()

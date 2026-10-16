@@ -152,6 +152,20 @@ class Schedule:
         # 依房屋空間順序排列，沒人使用的空間（例如公共設備）補 0
         return table.reindex(index=range(24), columns=[s.id for s in self.house.spaces], fill_value=0.0)
 
+    def first_activity_time(self, day_type: str, activity: str) -> float:
+        """當天最早有人開始某活動的時間（時，含小數），例如第一個人洗澡的時間。"""
+        starts = [i / 60 for m in self.members
+                  for i, s in enumerate(self.member_timeline(m, day_type)) if s.activity == activity]
+        if not starts:
+            raise ValueError(f"作息中沒有活動：{activity}")
+        return min(starts)
+
+    def sleep_hours(self, day_type: str, space_id: str) -> list[bool]:
+        """該空間每小時是否「以睡覺為主」（睡覺人·時 ≥ 0.5 且不少於清醒人·時）。"""
+        total = self.occupancy(day_type)[space_id]
+        sleep = self.occupancy(day_type, activity="sleep")[space_id]
+        return [bool(s >= 0.5 and s >= t - s) for s, t in zip(sleep, total)]
+
     def people_at_home(self, day_type: str) -> pd.Series:
         return self.occupancy(day_type).sum(axis=1)
 

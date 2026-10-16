@@ -20,7 +20,7 @@ from pathlib import Path
 import pandas as pd
 
 from core.data_source import CwaCsvWeatherSource, WeatherSource
-from core.load_model import LoadModel, task_hourly
+from core.load_model import LoadModel, place_task, task_hourly
 from core.models import House, LoadType, load_house
 from core.schedule import Schedule, day_type_for
 from core.tariff import Tariff
@@ -48,6 +48,7 @@ class ControlPlan:
     setpoints：空間 id → 24 小時冷氣設定溫度（°C）
     ac_on：空間 id → 24 小時冷氣運轉比例（0–1）；未指定時「有人就開、涼爽時開窗」
     task_starts：家電 id → 可移轉工作的開始時間（時，可有小數）
+    appliance_factors：空間 id → {家電 id → 24 小時調整係數}，例如照明調光、除濕機關閉
     """
 
     name: str = "基準"
@@ -55,6 +56,7 @@ class ControlPlan:
     setpoints: dict[str, list[float]] = field(default_factory=dict)
     ac_on: dict[str, list[float]] = field(default_factory=dict)
     task_starts: dict[str, float] = field(default_factory=dict)
+    appliance_factors: dict[str, dict[str, list[float]]] = field(default_factory=dict)
 
     def setpoint_for(self, space_id: str) -> list[float]:
         return list(self.setpoints.get(space_id, [self.default_setpoint] * 24))
@@ -87,12 +89,13 @@ class SimulationResult:
 
     @property
     def energy_cost(self) -> float:
-        """當天流動電費（元），不含基本電費。"""
+        """當天流動電費（元），不含基本電費。累進電價以邊際電價估算，月電費請用 MonthResult.bills()。"""
         return float(self.hourly["cost"].sum())
 
     def kwh_by_period(self) -> dict[str, float]:
+        """各電價時段用電。累進電價不分時段，全部計入「不分時段」。"""
         g = self.hourly.groupby("period_label")["kwh"].sum()
-        return {label: float(g.get(label, 0.0)) for label in ("尖峰", "半尖峰", "離峰")}
+        return {label: float(g.get(label, 0.0)) for label in ("尖峰", "半尖峰", "離峰", "不分時段")}
 
     @property
     def peak_demand_kw(self) -> float:
@@ -171,6 +174,7 @@ class Simulator:
                 space, weather, day_type,
                 setpoint_c=control.setpoint_for(space.id),
                 ac_on=control.ac_on.get(space.id),
+                appliance_factors=control.appliance_factors.get(space.id),
             )
             for a in space.appliances:
                 if a.id not in df.columns:
@@ -186,12 +190,12 @@ class Simulator:
 
         # 2. 可移轉工作
         tasks = []
-        for t in self.load_model.shiftable_tasks(weather, day_type):
-            start = control.task_starts.get(t["appliance"], t["default_start"])
-            tasks.append({**t, "start": start})
+        for task in self.load_model.shiftable_tasks(weather, day_type):
+            t = place_task(task, control.task_starts.get(task["appliance"]))
+            tasks.append(t)
             space = self.house.get_space(t["space"])
             appliance = space.get_appliance(t["appliance"])
-            for h, w in enumerate(task_hourly(t, start)):
+            for h, w in enumerate(task_hourly(t, t["start"])):
                 if w:
                     records.append((h, space.id, space.name, appliance.id, appliance.name,
                                     appliance.load_type.label, categorize(appliance.id, appliance.load_type), w / 1000))

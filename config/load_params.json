@@ -98,14 +98,16 @@
     "dryer": {
       "duration_h": 1.5, "default_start": 21, "runs": {"weekday": 1, "holiday": 1},
       "only_if": {"daily_mean_rh_above": 75, "or_daily_mean_temp_below": 20},
-      "_說明": "潮濕或寒冷、衣服不易晾乾時才使用烘衣機（估計）。"
+      "max_wait_after_washer_h": 2,
+      "_說明": "潮濕或寒冷、衣服不易晾乾時才使用烘衣機（估計）。max_wait_after_washer_h：洗好的衣服最多放幾小時就要烘（避免悶出異味）。"
     },
     "water_heater": {
       "default_start": 19,
       "liters_per_shower": 40,
       "supply_temp_c": 42,
       "efficiency": 0.85,
-      "_說明": "儲熱式電熱水器：依當天洗澡次數計算熱水需求，Q = 水量 × 4.186 kJ/kg·K ×（供水溫度 − 冷水溫度）÷ 效率；冷水溫度以當日平均氣溫近似；運轉時數 = Q ÷ 額定功率。"
+      "standby_loss_per_h": 0.015,
+      "_說明": "儲熱式電熱水器：依當天洗澡次數計算熱水需求，Q = 水量 × 4.186 kJ/kg·K ×（供水溫度 − 冷水溫度）÷ 效率；冷水溫度以當日平均氣溫近似；運轉時數 = Q ÷ 額定功率。standby_loss_per_h：燒好後儲水桶每小時散失的熱量比例（估計，相當於每天約 1 kWh 的待機損失），提早燒熱水要付出的代價。"
     }
   }
 }
