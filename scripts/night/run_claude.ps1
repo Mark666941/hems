@@ -29,7 +29,8 @@ function Write-FallbackReport([string]$reason) {
 $allowed = @(
     'Read(./**)', 'Edit(./**)', 'Glob', 'Grep',                  # 只能讀寫工作資料夾內的檔案（Edit 規則涵蓋所有寫檔工具）
     'Bash(git *)',                                               # git 指令
-    'Bash(python -m pytest*)', 'Bash(pytest*)'                   # 執行測試
+    'Bash(python -m pytest*)', 'Bash(pytest*)',                  # 執行測試
+    'Bash(date*)', 'Bash(ruff*)', 'Bash(python -m ruff*)'        # 查看時間（時間規則用）、程式碼檢查
 )
 $denied = @(
     'Bash(git push*)', 'Bash(git pull*)', 'Bash(git fetch*)', 'Bash(git merge*)', 'Bash(git rebase*)',

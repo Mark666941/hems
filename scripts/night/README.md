@@ -1,6 +1,7 @@
 # 夜間自動任務
 
-Windows 工作排程器在指定時間執行 `night_auto.bat`，讓 Claude Code 無人看管地完成 **CLAUDE.md 中下一個未完成的項目**（一次只做一項）。
+Windows 工作排程器在指定時間執行 `night_auto.bat`，讓 Claude Code 無人看管地依序完成 **CLAUDE.md 中未完成且標示（夜間）的項目**：
+每完成一項（測試通過、已 commit）後，若距離開始未超過 60 分鐘就接著做下一項；90 分鐘上限一到即強制結束。
 
 ## 檔案
 
@@ -14,7 +15,7 @@ Windows 工作排程器在指定時間執行 `night_auto.bat`，讓 Claude Code 
 
 ## 安全設計
 - **不動 main**：使用 `git worktree`，night-auto 分支在 `C:\hems-night` 獨立資料夾工作；`C:\hems` 與 main 完全不受影響。
-- **權限只開放**：讀寫工作資料夾內檔案、`python -m pytest`、`git`（禁止 push、pull、merge、切回 main、reset --hard 等）。
+- **權限只開放**：讀寫工作資料夾內檔案、`python -m pytest`、`git`、`ruff`（程式碼檢查）、`date`（查看時間）（禁止 push、pull、merge、切回 main、reset --hard 等）。
   使用 `--permission-mode dontAsk --permission-prompts none`：清單外的工具一律自動拒絕；**沒有使用任何跳過權限確認的選項**。
 - **時間上限**：`.bat` 的 `TIMEOUT_MIN=90`，逾時強制結束整個程序樹；工作排程另設 2 小時上限作為第二道保險。
 
