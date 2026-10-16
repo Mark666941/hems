@@ -1,11 +1,10 @@
 # 資料處理
 pandas>=2.2
 numpy>=1.26
-# 前端介面
+# 前端介面（Altair 隨 Streamlit 安裝，用於互動圖表）
 streamlit>=1.40
-# 靜態圖表（報告、README 用）
+altair>=5.0
+# 靜態圖表（命令列報告、README 用）
 matplotlib>=3.8
-# 最佳化（階段 6 進階用）
-pulp>=2.8
 # 測試
 pytest>=8.0

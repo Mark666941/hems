@@ -45,7 +45,9 @@ hems/
 │   ├── charts.py      # 靜態圖表（matplotlib）
 │   ├── optimizer.py   # 四種模式的最佳化（modes.json 參數 → ControlPlan）
 │   └── metrics.py     # 指標計算（含 PMV/PPD）、模式比較、節省建議、報告
-├── app.py             # Streamlit 前端
+├── app.py             # Streamlit 前端（streamlit run app.py）
+├── ui/                # 介面輔助：settings.py（設定 ↔ 核心模組）、charts.py（Altair 互動圖表）
+├── .streamlit/        # Streamlit 主題設定
 ├── docs/images/       # 里程碑圖表（README 用）
 ├── docs/reports/      # 整月分析報告範例（Markdown）
 ├── output/            # 推演輸出 CSV、PNG（不進 git）
@@ -110,7 +112,7 @@ hems/
 - [x] 階段 5：基準推演引擎（無最佳化）→ 24 小時用電曲線【里程碑 1】
 - [x] 階段 6：四種模式與最佳化 → 各模式 24 小時推演結果【里程碑 2】
 - [x] 階段 7：指標與模式比較 → 比較表與圖
-- [ ] 階段 8：Streamlit 前端並部署【里程碑 3】
+- [ ] 階段 8：Streamlit 前端並部署【里程碑 3】（前端完成，待部署到 Streamlit Community Cloud）
 - [ ] 階段 9：README、Demo 影片、備審說明
 
 ## 工作方式

@@ -200,10 +200,12 @@ def load_house(
     catalog_path: Path = CONFIG_DIR / "appliances.json",
 ) -> House:
     """讀取三個設定檔並組裝成房屋。"""
-    catalog = load_appliance_catalog(catalog_path)
-    templates = load_space_templates(templates_path)
-    config = _load_json(house_path)
+    return house_from_config(_load_json(house_path), load_space_templates(templates_path),
+                             load_appliance_catalog(catalog_path))
 
+
+def house_from_config(config: dict, templates: dict[str, dict], catalog: dict[str, Appliance]) -> House:
+    """由設定字典組裝房屋（介面讓使用者客製化房型時，不必寫回檔案）。"""
     spaces = [s for entry in config["spaces"] for s in build_space(entry, templates, catalog)]
     ids = [s.id for s in spaces]
     if len(ids) != len(set(ids)):

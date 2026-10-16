@@ -18,7 +18,7 @@ import pandas as pd
 
 from core.load_model import humidity_ratio, saturation_pressure_kpa
 from core.optimizer import MODE_ORDER, Optimizer
-from core.simulator import ControlPlan, MonthResult, SimulationResult, load_baseline_plan
+from core.simulator import ControlPlan, SimulationResult
 
 CONFIG_DIR = Path(__file__).resolve().parent.parent / "config"
 BASELINE = "基準（一般習慣）"
@@ -253,7 +253,7 @@ class Analyzer:
 
         # 1. 冷氣設定溫度每調高 1°C 的效益（只改設定溫度，其他習慣不變）
         if ac_matters:
-            base_sp = load_baseline_plan().default_setpoint
+            base_sp = self.opt.baseline_plan.default_setpoint
             warmer = self.sim.run_month(year, month, plan_id, ControlPlan(name="+1°C", default_setpoint=base_sp + 1))
             bill_warm = warmer.bills().set_index("plan_id").loc[plan_id, "月電費"]
             saved_kwh = base["月用電(kWh)"] - warmer.total_kwh
@@ -359,6 +359,13 @@ class Analyzer:
                      chart: Path | None = None) -> tuple[pd.DataFrame, list[Recommendation]]:
         table, scenarios = self.compare_month(year, month, plan_id)
         recs = self.recommendations(year, month, plan_id, table, scenarios)
+        path.write_text(self.report_markdown(year, month, plan_id, table, recs, chart.name if chart else None),
+                        encoding="utf-8")
+        return table, recs
+
+    def report_markdown(self, year: int, month: int, plan_id: str, table: pd.DataFrame,
+                        recs: list[Recommendation], chart_name: str | None = None) -> str:
+        """整月分析報告（Markdown 文字），可存檔或在網頁上下載。"""
         plan_name = self.sim.tariff.plans[plan_id]["name"]
         lines = [f"# {year} 年 {month} 月 HEMS 模式比較與節省建議", "",
                  f"- 房型：{self.sim.house.name}，{self.sim.house.occupants} 人",
@@ -366,13 +373,12 @@ class Analyzer:
                  "- 天氣：中央氣象署臺中測站逐時觀測資料",
                  f"- 碳排係數：{self.cfg['emission']['kg_co2e_per_kwh']} kg CO2e/kWh（{self.cfg['emission']['source']}）",
                  "", "## 模式比較", "", markdown_table(table.round(1)), ""]
-        if chart:
-            lines += [f"![模式比較]({chart.name})", ""]
+        if chart_name:
+            lines += [f"![模式比較]({chart_name})", ""]
         lines += ["## 節省建議（依每月可省金額排序）", ""]
         lines += [f"{i}. **{r.headline()}**  \n   {r.detail}" + (f"  \n   ※ {r.note}" if r.note else "")
                   for i, r in enumerate(recs, 1)]
-        path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-        return table, recs
+        return "\n".join(lines) + "\n"
 
 
 # ---------- 命令列 ----------

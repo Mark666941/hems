@@ -40,9 +40,11 @@ class Slot:
 class Schedule:
     """讀取 schedule.json，計算每位成員每分鐘的位置與活動。"""
 
-    def __init__(self, house: House, path: Path = CONFIG_DIR / "schedule.json"):
-        with open(path, encoding="utf-8") as f:
-            config = json.load(f)
+    def __init__(self, house: House, path: Path = CONFIG_DIR / "schedule.json", config: dict | None = None):
+        """config 有值時直接使用（介面客製化作息），否則讀取 path。"""
+        if config is None:
+            with open(path, encoding="utf-8") as f:
+                config = json.load(f)
         self.house = house
         self.activities: dict[str, str] = config["activities"]
         self.routines: dict[str, dict] = config["routines"]

@@ -8,12 +8,13 @@ def test_python_version():
 
 
 def test_packages_importable():
+    import altair
+    import matplotlib
     import numpy
     import pandas
-    import pulp
     import streamlit
 
-    for pkg in (numpy, pandas, pulp, streamlit):
+    for pkg in (altair, matplotlib, numpy, pandas, streamlit):
         assert pkg.__version__
 
 

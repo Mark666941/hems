@@ -1,0 +1,7 @@
+# Streamlit 介面主題：主色與圖表的「冷氣／省電模式」藍色一致
+[theme]
+primaryColor = "#2a78d6"
+font = "sans serif"
+
+[server]
+headless = true

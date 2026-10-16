@@ -79,10 +79,11 @@ def _to_params(raw: dict) -> ModeParams:
     return ModeParams(**raw)
 
 
-def load_modes(path: Path = CONFIG_DIR / "modes.json") -> tuple[dict, dict[str, Mode], float]:
-    """讀取 modes.json，回傳（舒適偏好, {模式 id: Mode}, 可移轉負載的需量懲罰 元/kW）。"""
-    with open(path, encoding="utf-8") as f:
-        cfg = json.load(f)
+def load_modes(path: Path = CONFIG_DIR / "modes.json", cfg: dict | None = None) -> tuple[dict, dict[str, Mode], float]:
+    """讀取 modes.json（或直接給設定字典 cfg），回傳（舒適偏好, {模式 id: Mode}, 可移轉負載的需量懲罰 元/kW）。"""
+    if cfg is None:
+        with open(path, encoding="utf-8") as f:
+            cfg = json.load(f)
     modes = {}
     for mid, m in cfg["modes"].items():
         params = _to_params(m["params"])
@@ -165,9 +166,11 @@ class OptimizationResult:
 
 
 class Optimizer:
-    def __init__(self, simulator: Simulator | None = None, modes_path: Path = CONFIG_DIR / "modes.json"):
+    def __init__(self, simulator: Simulator | None = None, modes_path: Path = CONFIG_DIR / "modes.json",
+                 modes_config: dict | None = None, baseline: ControlPlan | None = None):
         self.sim = simulator or Simulator()
-        self.comfort, self.modes, self.demand_weight = load_modes(modes_path)
+        self.comfort, self.modes, self.demand_weight = load_modes(modes_path, modes_config)
+        self.baseline_plan = baseline or load_baseline_plan()   # 比較基準（一般習慣）
         self._ctx_cache: dict[tuple, dict[str, ComfortContext]] = {}
 
     # ----- 共用資料 -----
@@ -478,7 +481,7 @@ class Optimizer:
 
     def compare(self, day: date, plan_id: str = "tou_2") -> tuple[pd.DataFrame, dict]:
         """基準情境與四種模式的比較。回傳（比較表, {名稱: SimulationResult 或 OptimizationResult}）。"""
-        results: dict = {"基準": self.sim.run(day, plan_id, load_baseline_plan())}
+        results: dict = {"基準": self.sim.run(day, plan_id, self.baseline_plan)}
         for mid in MODE_ORDER:
             results[mid] = self.optimize(day, mid, plan_id)
         rows = []
@@ -504,7 +507,7 @@ class Optimizer:
         from core.simulator import MonthResult
 
         days = [date(year, month, d) for d in range(1, calendar.monthrange(year, month)[1] + 1)]
-        scenarios = {"基準（一般習慣）": [self.sim.run(d, plan_id, load_baseline_plan()) for d in days]}
+        scenarios = {"基準（一般習慣）": [self.sim.run(d, plan_id, self.baseline_plan) for d in days]}
         for mid in MODE_ORDER:
             scenarios[self.modes[mid].name] = [self.optimize(d, mid, plan_id).result for d in days]
 
