@@ -14,6 +14,7 @@ from ui.context import AppContext, room_comfort
 from ui.floorplan import floorplan
 from ui.pages.plan import make_payload
 from ui.theme import compare_bars, delta_badge, kpi_cards, page_header, section, tips_card
+from ui.wizard import open_wizard
 
 
 def _fmt_hour(h: float) -> str:
@@ -63,6 +64,15 @@ def render(ctx: AppContext) -> None:
         (f"🌡️ 室外 <b>{hourly.loc[h, 'temp_c']:.1f}°C</b>・{hourly.loc[h, 'rh_pct']:.0f}%", ""),
         (f"⚡ {period} <b>{price:.2f}</b> 元/度", "peak" if period in ("尖峰", "半尖峰") else "off"),
     ])
+
+    if not st.session_state.ui.get("onboarded"):
+        with st.container(border=True):
+            c1, c2 = st.columns([5, 1], vertical_alignment="center")
+            c1.markdown("👋 **第一次使用？** 用新手引導花一分鐘設定房型、家庭成員作息、電價方案與熱水器，"
+                        "結果會更接近你家。")
+            if c2.button("開始設定", type="primary", key="home_wizard", width="stretch"):
+                open_wizard()
+                st.rerun()
 
     people = ctx.people_home()
     ac_rooms = ctx.ac_rooms_on()

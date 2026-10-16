@@ -36,6 +36,7 @@ from ui.floorplan import ensure_layout, room_dims, set_room_size
 from ui.pages import about, analysis, forecast, home, plan, settings as settings_page
 from ui.settings import default_settings, sim_key
 from ui.theme import apply_theme
+from ui.wizard import open_wizard, show_wizard_if_open
 
 st.set_page_config(page_title="HEMS 居家能源管理", page_icon="⚡", layout="wide")
 apply_theme()
@@ -48,6 +49,7 @@ DEFAULT_UI = {
     "preset": "夏季代表日", "custom_day": rep["summer"], "hour": datetime.now().hour, "plan_id": "tou_2",
     "schedule_type": "single", "mode": "normal", "day_mode": "normal", "night_mode": "sleep",
     "day_start": 7, "day_end": 23, "forecast_correction": False,
+    "onboarded": False,
 }
 # 登入並載入最後使用的設定檔（桌面版自動以本機使用者登入）；之後每次修改都會自動存檔
 store = ensure_session(DEFAULT_UI)
@@ -207,6 +209,8 @@ def dialog_layout() -> None:
 def menu_item(title: str, summary: str, dialog, key: str) -> None:
     """左側選單的一個項目：按鈕（標題）＋目前設定摘要。"""
     if st.button(f"{title}　›", key=f"menu_{key}", width="stretch"):
+        if key != "wizard":
+            st.session_state.wizard_open = False   # 同一次執行只能開一個視窗
         dialog()
     st.caption(summary)
 
@@ -217,6 +221,7 @@ with st.sidebar:
     st.caption("點選項目開啟設定")
     menu_item("👤 帳號與設定檔", f"{st.session_state.profile_name}・自動存檔", lambda: account_dialog(DEFAULT_UI),
               "account")
+    menu_item("🧭 新手引導", "房型、成員作息、電價、熱水器一次設定", open_wizard, "wizard")
     menu_item("📅 日期與時間", f"{day}（週{WEEKDAY_NAMES[day.weekday()]}・{day_type}）{sim_hour:02d}:00",
               dialog_datetime, "datetime")
     c1, c2, c3 = st.columns([1, 1, 1])
@@ -232,6 +237,7 @@ with st.sidebar:
     menu_item("🌡️ 舒適偏好", f"夏季清醒 {cooling['preferred_awake_c']:g}°C、睡眠 {cooling['preferred_sleep_c']:g}°C",
               dialog_comfort, "comfort")
     menu_item("🏠 格局與房間", f"{len(house.spaces)} 個空間，總面積 {house.total_area_ping:.1f} 坪", dialog_layout, "layout")
+show_wizard_if_open()   # 新手引導開啟中（左側選單或首頁開啟）
 
 # ---------- 共用推演結果 ----------
 
