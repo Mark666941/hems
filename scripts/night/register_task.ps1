@@ -1,4 +1,4 @@
-# 建立 Windows 工作排程「HEMS 夜間自動任務」：在指定時間執行一次 night_auto.bat。
+﻿# 建立 Windows 工作排程「HEMS 夜間自動任務」：在指定時間執行一次 night_auto.bat。
 # 用法：powershell -ExecutionPolicy Bypass -File scripts\night\register_task.ps1 [-At "2026-10-16 22:00"]
 param([datetime]$At = (Get-Date).Date.AddHours(22))
 
