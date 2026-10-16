@@ -57,7 +57,8 @@ def main() -> None:
     print(f"啟動 {TITLE}（{url}）…")
     server = subprocess.Popen(
         [sys.executable, "-m", "streamlit", "run", str(ROOT / "app.py"),
-         "--server.port", str(port), "--server.headless", "true",
+         "--server.port", str(port), "--server.address", "localhost",   # 只接受本機連線
+         "--server.headless", "true",
          "--browser.gatherUsageStats", "false"],
         cwd=ROOT,
     )
