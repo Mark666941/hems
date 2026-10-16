@@ -55,8 +55,22 @@ def _snapshot() -> str:
                       ensure_ascii=False, sort_keys=True)
 
 
+OLD_DEFAULT_NAMES = {"parent_1": ("家長 1", "爸爸"), "parent_2": ("家長 2", "媽媽"),
+                     "child_1": ("小孩 1", "哥哥"), "child_2": ("小孩 2", "妹妹")}
+
+
+def migrate(settings: dict) -> dict:
+    """舊版設定的遷移：成員仍是舊預設名稱（家長 1…）時改為新預設稱呼（爸爸…）；使用者自己改過的名字不動。"""
+    for m in settings.get("schedule", {}).get("members", []):
+        old, new = OLD_DEFAULT_NAMES.get(m["id"], (None, None))
+        if old and m.get("name") == old:
+            m["name"] = new
+    return settings
+
+
 def _activate(store: Store, user_id: int, profile_id: int, default_ui: dict) -> None:
     profile = store.load_profile(user_id, profile_id)
+    profile.settings = migrate(profile.settings)
     st.session_state.update(
         user_id=user_id, profile_id=profile.id, profile_name=profile.name,
         settings=profile.settings, ui=ui_from_json(profile.ui, default_ui), remote={}, remote_day=None)

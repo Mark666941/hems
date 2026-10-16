@@ -133,6 +133,7 @@ class AppContext:
     remote: dict
     dates: list[date] = field(default_factory=list)
     pages: dict = field(default_factory=dict)       # 頁面物件（st.page_link 用）
+    person_overrides: dict = field(default_factory=dict)   # 人物臨時變動（拖曳到別的房間）
 
     @property
     def sim(self):

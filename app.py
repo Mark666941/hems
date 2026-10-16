@@ -21,6 +21,7 @@ from core.models import load_space_templates
 from core.optimizer import MODE_ORDER, ModeSchedule
 from ui import charts
 from ui.account import account_dialog, autosave, ensure_session
+from ui.family import apply_person_overrides
 from ui.context import (WEEKDAY_NAMES, AppContext, available_dates, get_analyzer, month_bills, run_schedule,
                         run_with_remote, update_settings)
 from ui.floorplan import ensure_layout, room_dims, set_room_size
@@ -226,12 +227,23 @@ with st.sidebar:
 
 # ---------- 共用推演結果 ----------
 
-key = sim_key(settings)
-base_plan, base_result = run_schedule(analyzer, key, day, plan_id, tuple(mode_schedule.by_hour), mode_schedule.name)
-# 遙控器的手動覆寫只屬於「這一天」；換日期時清除
+# 遙控器的手動覆寫、人物的臨時變動都只屬於「這一天」；換日期時清除
 if st.session_state.get("remote_day") != str(day):
     st.session_state.remote, st.session_state.remote_day = {}, str(day)
+    st.session_state.person_overrides = {}
 remote: dict = st.session_state.remote
+person_overrides: dict = st.session_state.setdefault("person_overrides", {})
+
+# 人物臨時變動：疊加到作息上再模擬（不寫入設定檔）
+sim_settings = settings
+if person_overrides:
+    sim_settings = apply_person_overrides(settings, person_overrides, "holiday" if day_type == "假日" else "weekday")
+    try:
+        analyzer = get_analyzer(sim_key(sim_settings))
+    except (ValueError, KeyError):
+        st.session_state.person_overrides, sim_settings = {}, settings
+key = sim_key(sim_settings)
+base_plan, base_result = run_schedule(analyzer, key, day, plan_id, tuple(mode_schedule.by_hour), mode_schedule.name)
 effective_plan, remote_result = run_with_remote(analyzer, base_plan, key, day, plan_id, tuple(mode_schedule.by_hour),
                                                 json.dumps(remote, sort_keys=True))
 if remote:
@@ -240,7 +252,7 @@ if remote:
 ctx = AppContext(settings=settings, key=key, analyzer=analyzer, templates=templates, layout=layout, day=day,
                  day_type=day_type, hour=sim_hour, plan_id=plan_id, mode_schedule=mode_schedule, base_plan=base_plan,
                  plan=effective_plan, selected=remote_result if remote_result is not None else base_result,
-                 remote=remote, dates=dates)
+                 remote=remote, dates=dates, person_overrides=person_overrides)
 
 if "flash" in st.session_state:
     st.toast(st.session_state.pop("flash"), icon="✅")

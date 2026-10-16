@@ -4,6 +4,7 @@ from __future__ import annotations
 import streamlit as st
 
 from ui.context import AppContext, room_comfort, update_settings
+from ui.family import add_member, move_person, person_states, remove_member, rename_member, set_member_times
 from ui.floorplan import (ADDABLE, add_appliance, build_payload, default_spot, floorplan, move_appliance, move_room,
                           remote_command, remove_appliance, room_dims)
 from ui.theme import page_header
@@ -20,8 +21,11 @@ def make_payload(ctx: AppContext) -> dict:
         "period": hourly.loc[h, "period_label"], "price": float(hourly.loc[h, "price"]),
         "today_kwh": r.total_kwh, "today_cost": r.energy_cost, "mode": ctx.mode_schedule.name,
     }
-    return build_payload(ctx.settings, ctx.house, ctx.layout, ctx.templates, r, ctx.plan, ctx.remote, h,
-                         status, room_comfort(ctx.analyzer, r, h))
+    payload = build_payload(ctx.settings, ctx.house, ctx.layout, ctx.templates, r, ctx.plan, ctx.remote, h,
+                            status, room_comfort(ctx.analyzer, r, h))
+    payload["people"] = person_states(ctx.sim.schedule, ctx.house, r.day_type, h, ctx.person_overrides)
+    payload["day_type_label"] = "平日" if r.day_type == "weekday" else "假日"
+    return payload
 
 
 def handle_event(ctx: AppContext, event: dict | None, payload: dict) -> None:
@@ -48,6 +52,29 @@ def handle_event(ctx: AppContext, event: dict | None, payload: dict) -> None:
         space_id, appliance_id = event["key"].split("/")
         st.session_state.remote.pop(event["key"], None)
         update_settings(*remove_appliance(working, house, space_id, appliance_id))
+    elif action == "move_person":
+        person = next(p for p in payload["people"] if p["id"] == event["member"])
+        st.session_state.person_overrides = move_person(ctx.person_overrides, person["id"], ctx.hour,
+                                                        event["room"], person["activity"])
+        st.session_state.flash = f"{person['name']}這個小時改在{ctx.house.get_space(event['room']).name}（臨時變動）"
+        st.rerun()
+    elif action == "clear_person":
+        st.session_state.person_overrides = {k: v for k, v in ctx.person_overrides.items()
+                                             if v["member"] != event["member"]}
+        st.rerun()
+    elif action == "rename_member":
+        update_settings(rename_member(settings, event["member"], event.get("name", "")), "已更新名字")
+    elif action == "member_times":
+        times = {k: v for k, v in (event.get("times") or {}).items() if v}
+        update_settings(set_member_times(settings, event["member"], ctx.selected.day_type, times), "已更新個人作息")
+    elif action == "add_member":
+        update_settings(*add_member(settings, house, event.get("name", ""), event.get("role", "adult"),
+                                    event.get("bedroom")))
+    elif action == "remove_member":
+        new, msg = remove_member(settings, event["member"])
+        st.session_state.person_overrides = {k: v for k, v in ctx.person_overrides.items()
+                                             if v["member"] != event["member"]}
+        update_settings(new, msg)
     elif action == "add":
         room = layout["rooms"][event["room"]]
         w, d = room_dims(ctx.cfg_by_id[event["room"]], room, templates)

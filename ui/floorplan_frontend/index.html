@@ -102,6 +102,24 @@
   body.compact #app { border: 0; background: transparent; }
   body.compact .main { min-height: 0; }
   body.compact .appliance, body.compact .room { cursor: default; }
+  .person { cursor: grab; }
+  .avatar-text { font-size: 12px; font-weight: 700; fill: #fff; pointer-events: none; }
+  .avatar { width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; color: #fff;
+            font-weight: 800; font-size: 19px; flex-shrink: 0; }
+  .avatar.sm { width: 26px; height: 26px; font-size: 12px; }
+  .member-row { display: flex; align-items: center; gap: 10px; padding: 6px 4px; border-radius: 10px; cursor: pointer; font-size: 13px; }
+  .member-row:hover { background: var(--hall); }
+  .member-row small { color: var(--muted); display: block; font-size: 11.5px; }
+  .tl { display: grid; grid-template-columns: repeat(24, 1fr); gap: 1px; margin-top: 4px; }
+  .tl span { height: 18px; border-radius: 2px; }
+  .tl span.now { outline: 2px solid var(--ink); outline-offset: -1px; }
+  .tl-axis { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--muted); margin-top: 3px; }
+  .tl-legend { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: 11.5px; color: var(--muted); margin-top: 8px; }
+  .tl-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 4px; vertical-align: -1px; }
+  .times { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .times label { font-size: 12px; color: var(--muted); display: grid; gap: 4px; }
+  input[type=time], input[type=text] { font: inherit; font-size: 13px; padding: 7px 9px; border-radius: 10px;
+    border: 1px solid var(--line); background: var(--card); color: var(--ink); width: 100%; }
   .period { padding: 2px 8px; border-radius: 6px; font-size: 12px; font-weight: 700; color: #fff; }
 </style>
 </head>
@@ -148,6 +166,10 @@ const SMALL = {
   power: '<path d="M12 3v9"/><path d="M6.3 7.3a8 8 0 1 0 11.4 0"/>',
 };
 
+const ACT_COLOR = { sleep: "#6366f1", out: "#94a3b8", meal: "#f59e0b", cook: "#f59e0b", wash: "#22d3ee",
+                    shower: "#22d3ee", leisure: "#3ba7ff", rest: "#3ba7ff", study: "#a78bfa" };
+const ACT_LEGEND = [["sleep", "睡覺"], ["out", "外出"], ["meal", "用餐／煮飯"], ["wash", "盥洗／洗澡"],
+                    ["leisure", "休閒"], ["study", "讀書"]];
 let data = null, mode = "appliance", selected = null, drag = null, lastSent = 0;
 const css = (v) => getComputedStyle(document.body).getPropertyValue(v).trim();
 const svgIcon = (body, size, color, sw = 1.8) =>
@@ -238,7 +260,7 @@ function drawPlan() {
     const isSel = selected === a.key;
     // 運轉中才顯示功率標籤，關閉的家電只顯示灰色圖示，畫面比較乾淨
     const label = `${a.watts} W`, lw = label.length * 6.4 + 12;
-    out += `<g class="appliance" data-key="${a.key}" transform="translate(${x},${y})">
+    out += `<g class="appliance" data-key="${a.key}" data-bx="${x}" data-by="${y}" transform="translate(${x},${y})">
       <title>${esc(a.room)}・${esc(a.name)}：${on ? label : "關閉"}（今日 ${a.kwh_today.toFixed(2)} kWh）</title>
       ${isSel ? `<rect x="-21" y="-21" width="42" height="42" rx="12" fill="none" stroke="${css("--blue")}" stroke-width="2.5"/>` : ""}
       <rect x="-16" y="-16" width="32" height="32" rx="9" fill="${css("--card")}" stroke="${css("--line")}" filter="url(#shadow)"/>
@@ -248,6 +270,18 @@ function drawPlan() {
       ${on ? `<rect x="${-lw / 2}" y="19" width="${lw}" height="16" rx="8" fill="${css(TYPE_COLOR[a.type])}"/>
       <text class="watt" x="0" y="31" text-anchor="middle" fill="#fff">${label}</text>` : ""}
     </g>`;
+  }
+
+  // 家庭成員：依作息所在房間排成一列（大房間在室溫標籤下方，小房間在上方）
+  const byRoom = {};
+  for (const p of data.people || []) if (p.room) (byRoom[p.room] ||= []).push(p);
+  for (const [rid, list] of Object.entries(byRoom)) {
+    const r = data.rooms.find((x) => x.id === rid);
+    if (!r) continue;
+    const x = g.px(r.x), y = g.py(r.y), w = r.w * s, d = r.d * s, gap = 26;
+    let rowY = y + d / 2 + 48, x0 = x + w / 2 - ((list.length - 1) * gap) / 2;
+    if (rowY + 12 > y + d - 16) { rowY = y + 22; x0 = x + 32; }
+    list.forEach((p, i) => { out += personSvg(p, x0 + i * gap, rowY); });
   }
 
   // 指北針與比例尺
@@ -267,10 +301,27 @@ function drawPlan() {
   bindDrag(g);
 }
 
+function personSvg(p, x, y) {
+  const sel = selected === "person:" + p.id;
+  return `<g class="person" data-id="${p.id}" data-bx="${x}" data-by="${y}" transform="translate(${x},${y})">
+    <title>${esc(p.name)}：${esc(p.room_name)}・${esc(p.activity_label)}${p.temporary ? "（臨時變動）" : ""}</title>
+    ${sel ? `<circle r="16" fill="none" stroke="${css("--blue")}" stroke-width="2.5"/>` : ""}
+    <circle r="11.5" fill="${p.color}" stroke="${p.temporary ? css("--orange") : css("--card")}" stroke-width="2"
+            ${p.temporary ? 'stroke-dasharray="3 2"' : ""}/>
+    <text class="avatar-text" y="4.2" text-anchor="middle">${esc(p.initial)}</text>
+    ${p.sleeping ? '<text x="8" y="-8" font-size="10">💤</text>' : ""}
+  </g>`;
+}
+
+function roomAtPx(g, px, py) {
+  const mx = g.mx(px), my = g.my(py);
+  return data.rooms.find((r) => mx >= r.x && mx <= r.x + r.w && my >= r.y && my <= r.y + r.d);
+}
+
 // ---------- 拖曳 ----------
 function bindDrag(g) {
   const svg = document.getElementById("plan");
-  const selector = mode === "room" ? ".room" : ".appliance";
+  const selector = mode === "room" ? ".room" : ".appliance, .person";
   svg.querySelectorAll(selector).forEach((el) => {
     el.addEventListener("pointerdown", (e) => {
       e.preventDefault();
@@ -287,8 +338,7 @@ function bindDrag(g) {
         el.setAttribute("transform", `translate(${drag.dx},${drag.dy})`);
         el.style.opacity = .85;
       } else {
-        const a = data.appliances.find((x) => x.key === el.dataset.key);
-        el.setAttribute("transform", `translate(${g.px(a.x) + drag.dx},${g.py(a.y) + drag.dy})`);
+        el.setAttribute("transform", `translate(${+el.dataset.bx + drag.dx},${+el.dataset.by + drag.dy})`);
       }
     });
     el.addEventListener("pointerup", () => {
@@ -298,6 +348,14 @@ function bindDrag(g) {
       if (mode === "room") {
         const r = data.rooms.find((x) => x.id === el.dataset.id);
         if (moved) send({ action: "move_room", id: r.id, x: r.x + drag.dx / s, y: r.y + drag.dy / s });
+      } else if (el.classList.contains("person")) {
+        const p = data.people.find((x) => x.id === el.dataset.id);
+        const target = moved ? roomAtPx(drag.g, +el.dataset.bx + drag.dx, +el.dataset.by + drag.dy) : null;
+        if (target && target.id !== p.room) {
+          send({ action: "move_person", member: p.id, room: target.id });
+        } else if (!moved) {
+          selected = selected === "person:" + p.id ? null : "person:" + p.id;
+        }
       } else {
         const a = data.appliances.find((x) => x.key === el.dataset.key);
         if (moved) {
@@ -316,6 +374,10 @@ function bindDrag(g) {
 // ---------- 右側面板：遙控器／說明 ----------
 function drawPanel() {
   const panel = document.getElementById("panel");
+  if (selected && selected.startsWith("person:")) {
+    const p = (data.people || []).find((x) => "person:" + x.id === selected);
+    if (p) { panel.innerHTML = personPanel(p); bindPerson(p); return; }
+  }
   const a = data.appliances.find((x) => x.key === selected);
   if (!a) { panel.innerHTML = idlePanel(); bindIdle(); return; }
   const st = data.status, color = a.on ? css(TYPE_COLOR[a.type]) : css("--off");
@@ -361,11 +423,69 @@ function drawPanel() {
   panel.querySelector("[data-remove]").onclick = () => { send({ action: "remove", key: a.key }); selected = null; };
 }
 
+function personPanel(p) {
+  const h = Number(data.status.time.slice(0, 2)), t = p.times;
+  const cells = p.timeline.map((c) => `<span title="${String(c.hour).padStart(2, "0")}:00 ${esc(c.room)}・${esc(c.label)}"
+      style="background:${ACT_COLOR[c.activity] || "#94a3b8"}" class="${c.hour === h ? "now" : ""}"></span>`).join("");
+  const time = (key, label) => t[key] ? `<label>${label}<input type="time" step="900" data-time="${key}"
+      value="${t[key] === "24:00" ? "23:59" : t[key]}"></label>` : "";
+  return `
+    <div class="card">
+      <div class="remote-head">
+        <div class="avatar" style="background:${p.color}">${esc(p.initial)}</div>
+        <div><div class="remote-title">${esc(p.name)}</div>
+          <div class="remote-room">${p.role_label}・現在：${esc(p.room_name)}・${p.icon} ${esc(p.activity_label)}</div></div>
+        <button class="close" data-close>×</button>
+      </div>
+      ${p.temporary ? `<div style="margin-top:10px;display:flex;justify-content:space-between;align-items:center">
+        <span class="badge">● 臨時變動（${data.status.time}）</span><button class="link" data-act="clear">取消</button></div>` : ""}
+    </div>
+    <div class="card"><div class="section-title">今天的作息（${data.day_type_label}）</div>
+      <div class="tl">${cells}</div>
+      <div class="tl-axis"><span>0</span><span>6</span><span>12</span><span>18</span><span>24</span></div>
+      <div class="tl-legend">${ACT_LEGEND.map(([k, v]) => `<span><i style="background:${ACT_COLOR[k]}"></i>${v}</span>`).join("")}</div>
+    </div>
+    <div class="card"><div class="section-title">${esc(p.name)}的${data.day_type_label}時間</div>
+      <div class="times">${time("wake", "起床")}${time("bed", "就寢")}${time("out_start", "出門")}${time("out_end", "回家")}</div>
+      <button class="add-btn" style="margin-top:10px" data-act="times">套用（只改這位成員）</button></div>
+    <div class="card"><div class="section-title">名字</div>
+      <div class="add-row"><input type="text" id="member-name" value="${esc(p.name)}" maxlength="12">
+      <button class="add-btn" data-act="rename">改名</button></div></div>
+    <div class="note">拖曳頭像到別的房間＝這個小時改在那裡（臨時變動，只影響今天）。</div>
+    <button class="link danger" data-act="remove">刪除這位成員</button>`;
+}
+
+function bindPerson(p) {
+  const panel = document.getElementById("panel");
+  panel.querySelector("[data-close]").onclick = () => { selected = null; render(); };
+  const on = (act, fn) => { const b = panel.querySelector(`[data-act="${act}"]`); if (b) b.onclick = fn; };
+  on("clear", () => send({ action: "clear_person", member: p.id }));
+  on("rename", () => send({ action: "rename_member", member: p.id, name: document.getElementById("member-name").value }));
+  on("remove", () => { send({ action: "remove_member", member: p.id }); selected = null; });
+  on("times", () => {
+    const times = {};
+    panel.querySelectorAll("[data-time]").forEach((i) => { times[i.dataset.time] = i.value; });
+    send({ action: "member_times", member: p.id, times });
+  });
+}
+
 function idlePanel() {
   const types = Object.entries(data.addable);
   const rooms = data.rooms.map((r) => `<option value="${r.id}">${esc(r.name)}</option>`).join("");
   const on = data.appliances.filter((a) => a.on).length;
+  const people = data.people || [];
+  const bedrooms = data.rooms.filter((r) => r.template === "bedroom")
+    .map((r) => `<option value="${r.id}">${esc(r.name)}</option>`).join("");
+  const members = people.map((p) => `<div class="member-row" data-person="${p.id}">
+      <span class="avatar sm" style="background:${p.color}">${esc(p.initial)}</span>
+      <span>${esc(p.name)}<small>${p.room ? `${esc(p.room_name)}・${p.icon} ${esc(p.activity_label)}` : "🚶 外出中"}</small></span></div>`).join("");
   return `
+    <div class="card"><div class="section-title">家庭成員（${people.filter((p) => p.room).length}／${people.length} 人在家）</div>
+      ${members}
+      <div class="add-row" style="margin-top:10px"><input type="text" id="new-name" placeholder="名字" maxlength="12">
+      <select id="new-role"><option value="adult">大人</option><option value="child">小孩</option></select></div>
+      <div class="add-row"><select id="new-bedroom">${bedrooms}</select>
+      <button class="add-btn" id="add-member">＋ 新增成員</button></div></div>
     <div class="card"><div class="section-title">新增家電</div>
       <div class="add-row"><select id="add-type">${types.map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}</select>
       <select id="add-room">${rooms}</select></div>
@@ -381,6 +501,11 @@ function idlePanel() {
 }
 
 function bindIdle() {
+  document.querySelectorAll("[data-person]").forEach((row) => row.onclick = () => {
+    selected = "person:" + row.dataset.person; render(); });
+  const addMember = document.getElementById("add-member");
+  if (addMember) addMember.onclick = () => send({ action: "add_member", name: document.getElementById("new-name").value,
+    role: document.getElementById("new-role").value, bedroom: document.getElementById("new-bedroom").value });
   const btn = document.getElementById("add-btn");
   if (btn) btn.onclick = () => send({ action: "add", type: document.getElementById("add-type").value,
                                        room: document.getElementById("add-room").value });
@@ -396,6 +521,7 @@ function drawStatus() {
     <span>${icon("clock")}模擬時間 <b>${s.time}</b></span>
     <span>${icon("pin")}${esc(s.location)}</span>
     <span>${icon("temp")}室外 <b>${s.outdoor_temp.toFixed(1)}°C</b> · 濕度 <b>${s.rh.toFixed(0)}%</b></span>
+    <span>👥 在家 <b>${(data.people || []).filter((p) => p.room).length}</b> 人</span>
     <span>${icon("bolt")}全屋即時 <b>${s.house_kw.toFixed(2)} kW</b></span>
     <span>${icon("coin")}<span class="period" style="background:${periodColor}">${s.period}</span> <b>${s.price.toFixed(2)}</b> 元/度</span>
     <span>今日累計 <b>${s.today_kwh.toFixed(1)} kWh</b> · <b>${s.today_cost.toFixed(0)} 元</b></span>`;
@@ -404,7 +530,11 @@ function drawStatus() {
 
 function render() {
   if (!data) return;
-  if (selected && !data.appliances.some((a) => a.key === selected)) selected = null;
+  // 選取的家電或人物已不存在（例如被刪除）就取消選取
+  const exists = selected && (selected.startsWith("person:")
+    ? (data.people || []).some((p) => "person:" + p.id === selected)
+    : data.appliances.some((a) => a.key === selected));
+  if (!exists) selected = null;
   document.body.classList.toggle("compact", !!data.compact);
   drawPlan();
   if (!data.compact) { drawPanel(); drawStatus(); }

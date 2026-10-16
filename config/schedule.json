@@ -13,7 +13,7 @@
   },
   "members": [
     {
-      "id": "parent_1", "name": "家長 1", "role": "adult",
+      "id": "parent_1", "name": "爸爸", "role": "adult",
       "bedroom": "master_bedroom", "bathroom": "bathroom_1",
       "routines": {"weekday": "adult_weekday", "holiday": "adult_holiday"},
       "extra_blocks": {
@@ -31,7 +31,7 @@
       }
     },
     {
-      "id": "parent_2", "name": "家長 2", "role": "adult",
+      "id": "parent_2", "name": "媽媽", "role": "adult",
       "bedroom": "master_bedroom", "bathroom": "bathroom_1",
       "routines": {"weekday": "adult_weekday", "holiday": "adult_holiday"},
       "extra_blocks": {
@@ -46,7 +46,7 @@
       }
     },
     {
-      "id": "child_1", "name": "小孩 1", "role": "child",
+      "id": "child_1", "name": "哥哥", "role": "child",
       "bedroom": "bedroom_1", "bathroom": "bathroom_2",
       "routines": {"weekday": "child_weekday", "holiday": "child_holiday"},
       "extra_blocks": {
@@ -61,7 +61,7 @@
       }
     },
     {
-      "id": "child_2", "name": "小孩 2", "role": "child",
+      "id": "child_2", "name": "妹妹", "role": "child",
       "bedroom": "bedroom_2", "bathroom": "bathroom_2",
       "routines": {"weekday": "child_weekday", "holiday": "child_holiday"},
       "extra_blocks": {

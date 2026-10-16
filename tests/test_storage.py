@@ -163,3 +163,12 @@ def test_login_screen_register_and_login(monkeypatch):
     other.button[0].click().run()
     assert "user_id" not in other.session_state
     assert any("帳號或密碼錯誤" in e.value for e in other.error)
+
+
+def test_old_default_names_are_migrated():
+    from ui.account import migrate
+    s = default_settings()
+    names = ["家長 1", "家長 2", "小孩 1", "自訂名字"]
+    for m, n in zip(s["schedule"]["members"], names):
+        m["name"] = n
+    assert [m["name"] for m in migrate(s)["schedule"]["members"]] == ["爸爸", "媽媽", "哥哥", "自訂名字"]
