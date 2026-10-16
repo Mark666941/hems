@@ -39,7 +39,7 @@ rep = load_representative_days()
 DEFAULT_UI = {
     "preset": "夏季代表日", "custom_day": rep["summer"], "hour": datetime.now().hour, "plan_id": "tou_2",
     "schedule_type": "single", "mode": "normal", "day_mode": "normal", "night_mode": "sleep",
-    "day_start": 7, "day_end": 23,
+    "day_start": 7, "day_end": 23, "forecast_correction": False,
 }
 # 登入並載入最後使用的設定檔（桌面版自動以本機使用者登入）；之後每次修改都會自動存檔
 store = ensure_session(DEFAULT_UI)

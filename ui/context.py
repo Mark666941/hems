@@ -17,6 +17,7 @@ from core.data_source import CwaCsvWeatherSource
 from core.metrics import Analyzer
 from core.optimizer import ModeSchedule
 from core.simulator import ControlPlan, SimulationResult
+from ui import usage
 from ui.floorplan import apply_remote
 from ui.settings import build_analyzer
 
@@ -83,6 +84,20 @@ def month_bills(_analyzer: Analyzer, settings_key: str, year: int, month: int) -
 @st.cache_data
 def available_dates() -> list[date]:
     return CwaCsvWeatherSource().available_dates()
+
+
+@st.cache_data(max_entries=24, show_spinner="推演整月用電（預測用，約 2 秒）…")
+def month_profile(_analyzer: Analyzer, settings_key: str, year: int, month: int, plan_id: str):
+    """預測頁：某月一般習慣的每日用電概況；沒有天氣資料的月份改用最接近的月份（回傳實際使用的月份）。"""
+    dates = set(available_dates())
+    months = sorted({(d.year, d.month) for d in dates})
+    src = usage.source_month(year, month, months, _analyzer.sim.tariff)
+    if src is None:
+        return {"by_date": {}, "mean": {}, "appliance": {}, "hourly": {}}, None
+    prof = usage.simulate_month(_analyzer, src[0], src[1], plan_id, dates)
+    if src != (year, month):
+        prof = {**prof, "by_date": {}}      # 代替月份只用平日／假日平均
+    return prof, src
 
 
 # ---------- 設定 ----------
@@ -165,6 +180,9 @@ class AppContext:
     def metrics(self, result: SimulationResult, tag: str) -> dict:
         return day_metrics(self.analyzer, result,
                            f"{self.key}|{self.day}|{self.plan_id}|{tag}|{json.dumps(self.remote, sort_keys=True)}")
+
+    def month_profile(self, year: int, month: int):
+        return month_profile(self.analyzer, self.key, year, month, self.plan_id)
 
     def people_home(self, hour: int | None = None) -> float:
         h = self.hour if hour is None else hour

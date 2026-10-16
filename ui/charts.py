@@ -58,6 +58,23 @@ def price_bars(prices: pd.DataFrame) -> alt.Chart:
     return (bars + labels).properties(height=280)
 
 
+def forecast_daily(daily: pd.DataFrame) -> alt.Chart:
+    """預測頁：每日預測用電（實線，含使用紀錄與帳單修正）與純物理模擬（虛線）。daily：date、kwh、sim_kwh。"""
+    data = daily[["date", "kwh", "sim_kwh"]].rename(columns={"kwh": "預測", "sim_kwh": "物理模擬"})
+    data["date"] = pd.to_datetime(data["date"])
+    long = data.melt("date", var_name="種類", value_name="kWh")
+    scale = alt.Scale(domain=["預測", "物理模擬"], range=["#2a78d6", "#8a94a6"])
+    return alt.Chart(long).mark_line(point=alt.OverlayMarkDef(size=18)).encode(
+        x=alt.X("date:T", title="日期", axis=alt.Axis(format="%m/%d")),
+        y=alt.Y("kWh:Q", title="每日用電（度）"),
+        color=alt.Color("種類:N", scale=scale, legend=alt.Legend(orient="top", title=None)),
+        strokeDash=alt.StrokeDash("種類:N", scale=alt.Scale(domain=["預測", "物理模擬"], range=[[1, 0], [4, 3]]),
+                                  legend=None),
+        tooltip=[alt.Tooltip("date:T", title="日期", format="%Y-%m-%d"), "種類:N",
+                 alt.Tooltip("kWh:Q", title="度", format=".1f")],
+    ).properties(height=280)
+
+
 def hourly_stacked(result: SimulationResult) -> alt.LayerChart:
     """全屋逐時用電，依用電分類堆疊；灰底為尖峰時段。"""
     wide = result.hourly_by_category()

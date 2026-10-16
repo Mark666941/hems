@@ -7,6 +7,7 @@
 資料表：
 - users：帳號、密碼雜湊（PBKDF2-SHA256 + 隨機鹽，不存明碼）、最後使用的設定檔
 - profiles：每個使用者可有多組設定檔（例如「我家」「爸媽家」），內容是設定與介面選項的 JSON
+- usage_records：每個設定檔的家電使用紀錄（每週習慣、每日紀錄）與帳單度數，預測頁使用
 """
 from __future__ import annotations
 
@@ -50,6 +51,20 @@ class Profile(Base):
     settings_json: Mapped[str] = mapped_column(Text)
     ui_json: Mapped[str] = mapped_column(Text, default="{}")
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class UsageRecord(Base):
+    """家電使用紀錄與帳單（第 5 批）：每筆屬於一個設定檔，內容是 JSON。
+    kind：habit（每週固定習慣）、daily（每日紀錄）、bill（帳單度數）。"""
+    __tablename__ = "usage_records"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    profile_id: Mapped[int] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(16), index=True)
+    data_json: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+RECORD_KINDS = ("habit", "daily", "bill")
 
 
 @dataclass
@@ -180,6 +195,8 @@ class Store:
             p = s.get(Profile, profile_id)
             if p is None or p.user_id != user_id:
                 raise KeyError("找不到這個設定檔")
+            for r in s.scalars(select(UsageRecord).where(UsageRecord.profile_id == profile_id)):
+                s.delete(r)      # SQLite 預設不檢查外鍵，紀錄要自己刪
             s.delete(p)
             user = s.get(User, user_id)
             if user.last_profile_id == profile_id:
@@ -192,6 +209,43 @@ class Store:
             if user.last_profile_id and s.get(Profile, user.last_profile_id):
                 return user.last_profile_id
             return s.scalar(select(Profile.id).where(Profile.user_id == user_id).order_by(Profile.id).limit(1))
+
+    # ---------- 家電使用紀錄與帳單 ----------
+
+    @staticmethod
+    def _own_profile(s: Session, user_id: int, profile_id: int) -> Profile:
+        p = s.get(Profile, profile_id)
+        if p is None or p.user_id != user_id:
+            raise KeyError("找不到這個設定檔")
+        return p
+
+    def add_record(self, user_id: int, profile_id: int, kind: str, data: dict) -> int:
+        if kind not in RECORD_KINDS:
+            raise ValueError(f"未知的紀錄種類：{kind}")
+        with Session(self.engine) as s, s.begin():
+            self._own_profile(s, user_id, profile_id)
+            r = UsageRecord(profile_id=profile_id, kind=kind, data_json=json.dumps(data, ensure_ascii=False),
+                            created_at=_now())
+            s.add(r)
+            s.flush()
+            return r.id
+
+    def list_records(self, user_id: int, profile_id: int, kind: str | None = None) -> list[tuple[int, dict]]:
+        """回傳 [(紀錄 id, 內容)]，依建立順序。"""
+        with Session(self.engine) as s:
+            self._own_profile(s, user_id, profile_id)
+            q = select(UsageRecord).where(UsageRecord.profile_id == profile_id)
+            if kind:
+                q = q.where(UsageRecord.kind == kind)
+            return [(r.id, json.loads(r.data_json)) for r in s.scalars(q.order_by(UsageRecord.id))]
+
+    def delete_record(self, user_id: int, profile_id: int, record_id: int) -> None:
+        with Session(self.engine) as s, s.begin():
+            self._own_profile(s, user_id, profile_id)
+            r = s.get(UsageRecord, record_id)
+            if r is None or r.profile_id != profile_id:
+                raise KeyError("找不到這筆紀錄")
+            s.delete(r)
 
 
 # ---------- 匯出／匯入（JSON 檔，網頁版也能帶著走） ----------
