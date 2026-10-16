@@ -32,8 +32,9 @@
 ```
 hems/
 ├── config/            # 標配房型、模式參數、電價設定（JSON）
-├── data/weather/      # 中央氣象署逐時觀測 CSV
-├── scripts/           # 資料下載工具（fetch_cwa_weather.py）
+├── data/weather/      # 中央氣象署逐時觀測 CSV（2026 年 1–9 月）
+├── data/meter/        # 智慧插座／電表 CSV（目前只有示範用合成資料）
+├── scripts/           # 天氣下載、示範電表資料產生
 ├── core/
 │   ├── models.py      # 資料結構：空間、家電、房屋、使用者、模式
 │   ├── data_source.py # 資料來源介面（模擬 / 未來感測器）

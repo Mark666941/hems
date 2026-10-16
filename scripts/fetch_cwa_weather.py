@@ -99,8 +99,11 @@ def fetch_month(station: str, year: int, month: int) -> pd.DataFrame:
         frames.append(parse_records(fetch_day(station, date(year, month, d))))
         time.sleep(0.5)  # 避免對伺服器造成負擔
     df = pd.concat(frames, ignore_index=True)
-    # 少量缺測用前後小時線性內插補齊
+    # 少量缺測用前後小時線性內插補齊，並回報補了幾筆（資料品質可追溯）
     value_cols = ["temp_c", "rh_pct", "solar_mj_m2", "precip_mm", "wind_ms"]
+    missing = df[value_cols].isna().sum()
+    if missing.any():
+        print("內插補值筆數：" + "、".join(f"{c} {n}" for c, n in missing.items() if n))
     df[value_cols] = df[value_cols].interpolate(limit_direction="both")
     return df
 

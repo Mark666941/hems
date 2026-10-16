@@ -19,7 +19,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from core.data_source import CwaCsvWeatherSource, WeatherSource
+from core.data_source import METER_COLUMNS, CwaCsvWeatherSource, MeterSource, WeatherSource
 from core.load_model import LoadModel, place_task, task_hourly
 from core.models import House, LoadType, load_house
 from core.schedule import Schedule, day_type_for
@@ -238,6 +238,19 @@ class Simulator:
                   control: ControlPlan | None = None) -> "MonthResult":
         days = [date(year, month, d) for d in range(1, calendar.monthrange(year, month)[1] + 1)]
         return MonthResult(self, [self.run(d, plan_id, control) for d in days])
+
+
+class SimulatedMeterSource(MeterSource):
+    """把推演結果包裝成用電資料來源，格式和智慧插座／電表的實測資料相同，可以直接比對。"""
+
+    def __init__(self, simulator: Simulator | None = None, control: ControlPlan | None = None,
+                 plan_id: str = "tou_2"):
+        self.simulator = simulator or Simulator()
+        self.control = control
+        self.plan_id = plan_id
+
+    def get_hourly_consumption(self, day: date) -> pd.DataFrame:
+        return self.simulator.run(day, self.plan_id, self.control).records[METER_COLUMNS].copy()
 
 
 @dataclass

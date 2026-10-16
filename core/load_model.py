@@ -208,11 +208,19 @@ class LoadModel:
         self.schedule = schedule
         self.params = params or load_params()
         self.awake = set(schedule.activities) - NOT_AWAKE
+        self._people_cache: dict[tuple, tuple[list[float], list[float]]] = {}
 
     # ----- 人體發熱 -----
 
     def people_gains(self, space: Space, day_type: str) -> tuple[list[float], list[float]]:
-        """每小時人體顯熱、潛熱（W）。"""
+        """每小時人體顯熱、潛熱（W）。只和作息有關，算過就快取（最佳化時會呼叫數百次）。"""
+        key = (space.id, day_type)
+        if key not in self._people_cache:
+            self._people_cache[key] = self._compute_people_gains(space, day_type)
+        sensible, latent = self._people_cache[key]
+        return list(sensible), list(latent)
+
+    def _compute_people_gains(self, space: Space, day_type: str) -> tuple[list[float], list[float]]:
         p = self.params["people"]
         log = self.schedule.activity_log(day_type)
         log = log[log["space"] == space.id]
@@ -364,10 +372,10 @@ class LoadModel:
                     "air_conditioner": result.power_w,
                 })
 
-        df = pd.DataFrame(rows)
-        for aid, values in appliance_w.items():
-            df[aid] = values
-        return df
+        # 一次建立整張表（逐欄加入 DataFrame 很慢，最佳化時每天會呼叫數百次）
+        columns = {key: [row[key] for row in rows] for key in rows[0]}
+        columns.update(appliance_w)
+        return pd.DataFrame(columns)
 
     def _exhaust_conductance(self, space: Space, appliance_w: dict[str, list[float]]) -> list[float]:
         """排風家電（排油煙機、抽風機）運轉時帶走室內熱量的等效熱傳係數（W/K）。"""

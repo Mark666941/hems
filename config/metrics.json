@@ -12,6 +12,11 @@
     "clo": {"cooling": 0.5, "heating": 1.0},
     "comfort_limit": 0.5
   },
+  "calibration": {
+    "_說明": "ASHRAE Guideline 14-2014 模型校正標準：模擬與實測的誤差在此範圍內，模型才算「已校正」。NMBE 為正代表模型低估。",
+    "hourly": {"nmbe_pct": 10, "cvrmse_pct": 30},
+    "monthly": {"nmbe_pct": 5, "cvrmse_pct": 15}
+  },
   "appliance_advice": {
     "_說明": "耗電大戶的改善建議（設備面），saving_ratio 為相對目前耗電可節省的比例（典型值）。",
     "water_heater": {"text": "電熱水器換成熱泵熱水器（COP 約 3–4）", "saving_ratio": 0.7},

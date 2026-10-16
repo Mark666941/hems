@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import warnings
 from datetime import date
 from enum import Enum
 from pathlib import Path
@@ -30,6 +31,7 @@ class Tariff:
             self.config = json.load(f)
         self.source = self.config["source"]
         self.plans = self.config["plans"]
+        self._warned_years: set[int] = set()
         self._validate()
 
     def _validate(self) -> None:
@@ -56,6 +58,10 @@ class Tariff:
         days = self.config["off_peak_days"]
         if day.strftime("%m-%d") in days["fixed"]:
             return True
+        if str(day.year) not in days["by_year"] and day.year not in self._warned_years:
+            # 農曆節日（春節、端午、中秋、清明）每年日期不同，缺少該年資料時只會判斷到國曆節日
+            self._warned_years.add(day.year)
+            warnings.warn(f"tariff.json 沒有 {day.year} 年的農曆離峰日，春節等節日會被當成平日", stacklevel=2)
         by_year = days["by_year"].get(str(day.year), {})
         return any(day.isoformat() in dates for dates in by_year.values())
 

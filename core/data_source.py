@@ -44,12 +44,67 @@ class CwaCsvWeatherSource(WeatherSource):
             )
         return pd.read_csv(path)
 
+    def available_dates(self) -> list[date]:
+        """已下載的所有日期（介面的日期選單用）。"""
+        days = []
+        for path in sorted(self.data_dir.glob(f"{self.station}_*.csv")):
+            days += [date.fromisoformat(d) for d in pd.read_csv(path, usecols=["date"])["date"].unique()]
+        return sorted(days)
+
     def get_hourly_weather(self, day: date) -> pd.DataFrame:
         df = self.load_month(day.year, day.month)
         df = df[df["date"] == day.isoformat()].sort_values("hour")
         if list(df["hour"]) != list(range(24)):
             raise ValueError(f"{day} 的逐時資料不是完整的 0–23 時（實際 {len(df)} 筆）")
         return df[WEATHER_COLUMNS].reset_index(drop=True)
+
+
+METER_COLUMNS = ["hour", "space_id", "appliance_id", "kwh"]
+METER_DIR = ROOT / "data" / "meter"
+
+
+class MeterSource(ABC):
+    """用電資料來源的共同介面：模擬結果與未來的智慧插座、電表資料都轉成同一種格式。
+
+    appliance_id 可以是單一家電（智慧插座），也可以是 "main"（總電表，只有全屋合計）。
+    """
+
+    @abstractmethod
+    def get_hourly_consumption(self, day: date) -> pd.DataFrame:
+        """回傳欄位 hour、space_id、appliance_id、kwh（每小時用電度數）。"""
+
+
+class CsvMeterSource(MeterSource):
+    """讀取智慧插座或電表匯出的 CSV（data/meter/*.csv）。
+
+    CSV 欄位：timestamp（ISO 時間，例如 2026-07-20T13:15:00）、space_id、appliance_id，
+    以及 kwh（該筆期間的用電量）或 power_w（瞬時功率）其中之一。
+    取樣間隔不限（1 分鐘、15 分鐘、1 小時都可以），會自動彙整成每小時。
+    power_w 以「該筆到下一筆的時間」積分成能量；最後一筆沿用前一個間隔。
+    """
+
+    def __init__(self, path: Path):
+        self.path = path
+        df = pd.read_csv(path, parse_dates=["timestamp"])
+        missing = {"timestamp", "space_id", "appliance_id"} - set(df.columns)
+        if missing or not ({"kwh", "power_w"} & set(df.columns)):
+            raise ValueError(f"{path.name} 欄位不足：需要 timestamp、space_id、appliance_id，以及 kwh 或 power_w")
+        if "kwh" not in df.columns:
+            df = df.sort_values(["space_id", "appliance_id", "timestamp"])
+            step_h = (df.groupby(["space_id", "appliance_id"])["timestamp"].diff(-1).dt.total_seconds().abs() / 3600)
+            step_h = step_h.fillna(step_h.groupby([df["space_id"], df["appliance_id"]]).transform("median"))
+            df["kwh"] = df["power_w"] * step_h / 1000
+        self.data = df
+
+    def available_dates(self) -> list[date]:
+        return sorted(set(self.data["timestamp"].dt.date))
+
+    def get_hourly_consumption(self, day: date) -> pd.DataFrame:
+        df = self.data[self.data["timestamp"].dt.date == day]
+        if df.empty:
+            raise ValueError(f"{self.path.name} 沒有 {day} 的資料")
+        df = df.assign(hour=df["timestamp"].dt.hour)
+        return df.groupby(["hour", "space_id", "appliance_id"], as_index=False)["kwh"].sum()[METER_COLUMNS]
 
 
 def pick_representative_day(month_df: pd.DataFrame, tariff: Tariff) -> str:

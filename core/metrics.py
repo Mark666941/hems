@@ -72,6 +72,56 @@ def indoor_rh(t_room: float, t_out: float, rh_out: float) -> float:
     return min(100.0, 100 * pw / saturation_pressure_kpa(t_room))
 
 
+# ---------- 模型校正（ASHRAE Guideline 14） ----------
+
+def calibration_metrics(measured, simulated, limits: dict, n_params: int = 1) -> dict[str, float | bool]:
+    """模擬與實測的誤差指標。
+
+    NMBE（%）= Σ(實測 − 模擬) / ((n − p) × 實測平均) × 100：整體偏高或偏低
+    CV(RMSE)（%）= √(Σ(實測 − 模擬)² / (n − p)) / 實測平均 × 100：逐筆誤差大小
+    limits：{"nmbe_pct": …, "cvrmse_pct": …}；兩者都在範圍內才算校正通過。
+    """
+    m = pd.Series(measured, dtype=float).reset_index(drop=True)
+    s = pd.Series(simulated, dtype=float).reset_index(drop=True)
+    if len(m) != len(s) or len(m) <= n_params:
+        raise ValueError("實測與模擬的資料筆數必須相同，且多於參數數量")
+    mean = m.mean()
+    if mean == 0:
+        raise ValueError("實測平均為 0，無法計算相對誤差")
+    dof = len(m) - n_params
+    nmbe = 100 * (m - s).sum() / (dof * mean)
+    cvrmse = 100 * math.sqrt(((m - s) ** 2).sum() / dof) / mean
+    return {"筆數": len(m), "實測合計(kWh)": m.sum(), "模擬合計(kWh)": s.sum(),
+            "NMBE(%)": nmbe, "CV(RMSE)(%)": cvrmse,
+            "通過": abs(nmbe) <= limits["nmbe_pct"] and cvrmse <= limits["cvrmse_pct"]}
+
+
+def compare_with_meter(measured, simulated, days: list[date], limits: dict) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """以實測資料的每個通道（總電表 main 或單一家電）比對模擬結果。
+    回傳（逐時對照表, 各通道校正指標）。"""
+    rows = []
+    for day in days:
+        meas = measured.get_hourly_consumption(day)
+        sim = simulated.get_hourly_consumption(day)
+        for (space_id, appliance_id), group in meas.groupby(["space_id", "appliance_id"]):
+            if appliance_id == "main":
+                sim_hourly = sim.groupby("hour")["kwh"].sum()
+            else:
+                part = sim[(sim["space_id"] == space_id) & (sim["appliance_id"] == appliance_id)]
+                sim_hourly = part.groupby("hour")["kwh"].sum()
+            meas_hourly = group.groupby("hour")["kwh"].sum()
+            for h in range(24):
+                rows.append({"date": day, "hour": h, "channel": f"{space_id}/{appliance_id}",
+                             "measured_kwh": float(meas_hourly.get(h, 0.0)),
+                             "simulated_kwh": float(sim_hourly.get(h, 0.0))})
+    detail = pd.DataFrame(rows)
+    summary = pd.DataFrame([
+        {"通道": channel, **calibration_metrics(g["measured_kwh"], g["simulated_kwh"], limits)}
+        for channel, g in detail.groupby("channel", sort=False)
+    ])
+    return detail, summary
+
+
 def markdown_table(df: pd.DataFrame) -> str:
     """把 DataFrame 轉成 Markdown 表格（不需額外套件）。"""
     header = "| " + " | ".join(map(str, df.columns)) + " |"
@@ -334,6 +384,7 @@ def main() -> None:
     parser.add_argument("day", nargs="?", help="日期；省略時跑夏、冬代表日")
     parser.add_argument("--month", help="整月分析與節省建議，例如 2026-07（約 30 秒）")
     parser.add_argument("--plan", default="tou_2", help="電價方案：tou_2 / tou_3 / progressive")
+    parser.add_argument("--calibrate", help="用電表／智慧插座 CSV 校正模型，例如 data/meter/demo_synthetic_2026-07.csv")
     args = parser.parse_args()
 
     pd.set_option("display.unicode.east_asian_width", True)
@@ -342,6 +393,21 @@ def main() -> None:
     out_dir.mkdir(exist_ok=True)
     analyzer = Analyzer()
     from core.charts import plot_metric_panels
+
+    if args.calibrate:
+        from core.data_source import CsvMeterSource
+        from core.simulator import SimulatedMeterSource
+        measured = CsvMeterSource(Path(args.calibrate))
+        days = measured.available_dates()
+        limits = analyzer.cfg["calibration"]["hourly"]
+        detail, summary = compare_with_meter(measured, SimulatedMeterSource(analyzer.sim), days, limits)
+        print(f"\n=== 模型校正（ASHRAE Guideline 14，逐時：|NMBE| ≤ {limits['nmbe_pct']}%、"
+              f"CV(RMSE) ≤ {limits['cvrmse_pct']}%）===")
+        print(f"資料：{measured.path.name}，{days[0]} ～ {days[-1]}，共 {len(days)} 天")
+        print(summary.round(2).to_string(index=False))
+        detail.to_csv(out_dir / "calibration_detail.csv", index=False, encoding="utf-8-sig")
+        print(f"\n逐時對照：{out_dir / 'calibration_detail.csv'}")
+        return
 
     if args.month:
         year, month = map(int, args.month.split("-"))

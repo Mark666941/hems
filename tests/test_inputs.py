@@ -52,6 +52,11 @@ def test_off_peak_days(tariff):
     assert (prices["price"] == 2.06).all()
 
 
+def test_missing_lunar_calendar_warns(tariff):
+    with pytest.warns(UserWarning, match="2027"):
+        tariff.is_off_peak_day(date(2027, 2, 8))
+
+
 def test_progressive_bill_matches_taipower_example(tariff):
     # 台電範例：非時間住宅用戶 8 月用電 400 度，電費 1,015 元
     assert round(tariff.progressive_bill(400, summer=True)) == 1015
