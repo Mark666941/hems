@@ -1,0 +1,13 @@
+{
+  "_說明": "基準情境（未最佳化）：代表一般家庭的用電習慣，作為四種模式比較的基準。",
+  "name": "基準（一般習慣）",
+  "tariff_plan": "tou_2",
+  "ac": {
+    "setpoint_c": 25,
+    "rule": "occupied",
+    "_說明": "有人在空間（含睡覺）就開冷氣，整天固定設定 25°C；室外低於 load_params 的 natural_ventilation_below_c 時改開窗。設定 25°C 代表台灣家庭常見的偏低設定，經濟部建議為 26–28°C。"
+  },
+  "shiftable": {
+    "_說明": "可移轉負載依習慣時段運轉（見 load_params.json 的 default_start）：晚餐後 19–21 時燒熱水、洗衣、烘衣，多落在尖峰。"
+  }
+}

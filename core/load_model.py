@@ -65,6 +65,12 @@ class SpaceGeometry:
             daylight=t["daylight"],
         )
 
+    def conductance_w_k(self, params: dict, ach: float) -> float:
+        """室內外每差 1°C 的總熱傳量（W/K）：外牆 + 窗戶 + 換氣。"""
+        env, inf = params["envelope"], params["infiltration"]
+        ventilation = inf["air_density"] * inf["cp_air"] * self.volume_m3 * ach / 3600
+        return env["u_wall"] * self.wall_m2 + env["u_window"] * self.window_m2 + ventilation
+
 
 # ---------- 冷房負載 ----------
 
@@ -294,15 +300,33 @@ class LoadModel:
         t_wall = effective_wall_temps(sol_air, env["wall_time_lag_h"], env["wall_decrement_factor"])
         ppl_s, ppl_l = self.people_gains(space, day_type)
         capacity_kj_k = self.params["thermal_mass"]["kj_per_m2_k"] * geo.floor_m2
+        ua_closed = geo.conductance_w_k(self.params, self.params["infiltration"]["ach"])
+        ua_open = geo.conductance_w_k(self.params, self.params["infiltration"]["natural_ventilation_ach"])
+        ua_exhaust = self._exhaust_conductance(space, appliance_w)
+
+        def free_running(h: int, t_start: float) -> tuple[float, float]:
+            """冷氣沒開時的室溫，一階熱響應（1R1C 模型）：
+                平衡溫度 T_eq = 室外與牆體等效溫度的平均 + 室內發熱 ÷ UA
+                室溫以時間常數 τ = C ÷ UA 指數接近 T_eq（家具、牆面有熱容量，不會瞬間變溫）
+            室外夠熱或適中時住戶會開窗（UA 大）；太冷時關窗；排油煙機、抽風機運轉時換氣再增加。
+            回傳（這小時平均室溫, 小時結束時室溫）。"""
+            ua = (ua_open if temps[h] >= ac["natural_ventilation_below_c"] else ua_closed) + ua_exhaust[h]
+            base = (temps[h] + t_wall[h]) / 2
+            if ua <= 0 or capacity_kj_k <= 0:   # 沒有面積的空間（公共設備）不計室溫
+                return base, base
+            t_eq = base + (ppl_s[h] + internal[h]) / ua
+            tau_h = capacity_kj_k * 1000 / ua / 3600
+            decay = math.exp(-1 / tau_h)
+            t_end = t_eq + (t_start - t_eq) * decay
+            t_avg = t_eq + (t_start - t_eq) * tau_h * (1 - decay)   # 指數曲線在一小時內的平均
+            return t_avg, t_end
 
         # 跑兩輪：第一輪求出 23 時結束時的室溫，作為 0 時的起始狀態（每天週期性重複）
-        t_room = None
+        t_room = (temps[23] + t_wall[23]) / 2
         for _ in range(2):
             rows = []
-            if t_room is None:
-                t_room = (temps[-1] + t_wall[-1]) / 2
             for h in range(24):
-                t_free = (temps[h] + t_wall[h]) / 2   # 冷氣沒開時的室溫估計
+                t_free, t_free_end = free_running(h, t_room)
                 on = ac_on[h] if has_ac else 0.0
                 pulldown = 0.0
                 if on > 0 and t_room > setpoints[h]:
@@ -312,14 +336,20 @@ class LoadModel:
                 if not has_ac or on <= 0:
                     load = CoolingLoad()  # 冷氣沒開就沒有冷房負載（只記錄耗電為 0）
                 result = ac_power(load.total, ac_unit.power_w if has_ac else 0, temps[h], setpoints[h], ac, on)
-                t_room = setpoints[h] if (on >= 0.5 and load.total > 0) else t_free
+                cooling = on > 0 and load.total > 0
+                t_ac = self._cooled_room_temp(load, result, setpoints[h], t_room, ua_closed, capacity_kj_k, on) \
+                    if cooling else t_free
+                t_room = t_ac if on >= 0.5 and cooling else t_free_end
                 rows.append({
                     "hour": h,
                     "setpoint_c": setpoints[h] if on > 0 else None,
                     "ac_on": on,
+                    "room_temp_c": t_ac if cooling else t_free,   # 使用者在這小時感受到的室溫
                     **{f"load_{k}": v for k, v in load.as_dict().items()},
                     "load_total_w": load.total,
-                    "unmet_w": result.unmet_w,
+                    # 能力不足：只計「連穩態負載都處理不了」的部分；
+                    # 蓄熱沒移除完的部分會轉到下一小時的 pull-down，不重複計算
+                    "unmet_w": max(0.0, load.total - load.pulldown - result.delivered_w),
                     "cop": result.cop,
                     "part_load": result.part_load,
                     "air_conditioner": result.power_w,
@@ -329,6 +359,37 @@ class LoadModel:
         for aid, values in appliance_w.items():
             df[aid] = values
         return df
+
+    def _exhaust_conductance(self, space: Space, appliance_w: dict[str, list[float]]) -> list[float]:
+        """排風家電（排油煙機、抽風機）運轉時帶走室內熱量的等效熱傳係數（W/K）。"""
+        inf = self.params["infiltration"]
+        result = [0.0] * 24
+        for aid, hourly_w in appliance_w.items():
+            rule = self.params["appliance_rules"].get(aid, {})
+            appliance = space.get_appliance(aid)
+            if "exhaust_m3_h" not in rule or appliance is None or appliance.power_w <= 0:
+                continue
+            for h, w in enumerate(hourly_w):
+                running = w / (appliance.power_w * rule.get("duty", 1.0))  # 這小時運轉比例
+                result[h] += inf["air_density"] * inf["cp_air"] * rule["exhaust_m3_h"] * running / 3600
+        return result
+
+    @staticmethod
+    def _cooled_room_temp(load: CoolingLoad, result: "ACResult", t_set: float, t_prev: float,
+                          ua: float, capacity_kj_k: float, on: float) -> float:
+        """冷氣運轉這小時結束時的室溫。
+
+        冷氣先處理「穩態負載」（外牆、日射、人體、家電、滲透），剩下的能力才用來移除蓄熱：
+        - 穩態負載都處理不了：室溫高於設定值，溫升 = 未處理熱量 ÷ 熱傳係數 UA
+        - 蓄熱只移除一部分：室溫從原本溫度往下降，降幅 = 移除熱量 ÷ 熱容量 C
+        """
+        steady = load.total - load.pulldown
+        if result.delivered_w < steady:
+            return t_set + (steady - result.delivered_w) / (ua * max(on, 1e-6))
+        removed_wh = result.delivered_w - steady
+        if load.pulldown > 0 and removed_wh < load.pulldown - 1e-9:
+            return max(t_set, t_prev - removed_wh * 3.6 / capacity_kj_k)
+        return t_set
 
     # ----- 可移轉負載 -----
 

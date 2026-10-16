@@ -11,3 +11,5 @@ __pycache__/
 .idea/
 Thumbs.db
 .DS_Store
+# 推演輸出（可隨時用 python -m core.simulator 重新產生）
+output/

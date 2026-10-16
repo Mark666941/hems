@@ -54,6 +54,8 @@ class Schedule:
             )
             for m in config["members"]
         ]
+        # 作息只和「平日／假日」有關，計算結果可以重複使用（整月推演時會呼叫數千次）
+        self._cache: dict[tuple, object] = {}
         self._validate()
 
     # ---------- 檢查設定 ----------
@@ -94,16 +96,25 @@ class Schedule:
 
     def member_timeline(self, member: Member, day_type: str) -> list[Slot]:
         """回傳長度 1440 的列表：該成員每分鐘的位置與活動。"""
-        routine = self.routines[member.routines[day_type]]
-        default = routine["default"]
-        timeline = [Slot(self._resolve_space(default["space"], member), default["activity"])] * MINUTES_PER_DAY
-        for block in routine["blocks"] + member.extra_blocks.get(day_type, []):
-            self._apply(timeline, block, member)
-        return timeline
+        key = ("timeline", member.id, day_type)
+        if key not in self._cache:
+            routine = self.routines[member.routines[day_type]]
+            default = routine["default"]
+            timeline = [Slot(self._resolve_space(default["space"], member), default["activity"])] * MINUTES_PER_DAY
+            for block in routine["blocks"] + member.extra_blocks.get(day_type, []):
+                self._apply(timeline, block, member)
+            self._cache[key] = timeline
+        return self._cache[key]
 
     def activity_log(self, day_type: str) -> pd.DataFrame:
         """長表格：每小時、每位成員、每個(空間, 活動)停留的比例（0–1）。
         之後的負載模型可用它判斷「誰在哪裡做什麼」，例如煮飯時開排油煙機。"""
+        key = ("log", day_type)
+        if key not in self._cache:
+            self._cache[key] = self._build_activity_log(day_type)
+        return self._cache[key].copy()
+
+    def _build_activity_log(self, day_type: str) -> pd.DataFrame:
         rows = []
         for m in self.members:
             timeline = self.member_timeline(m, day_type)
@@ -120,12 +131,15 @@ class Schedule:
     def presence(self, day_type: str, space_id: str, activities: set[str] | None = None) -> list[float]:
         """每小時中「至少有一人在該空間（且正在做指定活動）」的時間比例（0–1）。
         和 occupancy 不同：兩人同時看電視，電視只開一台，所以用「有沒有人」而不是「幾個人」。"""
-        minutes_used = [False] * MINUTES_PER_DAY
-        for m in self.members:
-            for i, s in enumerate(self.member_timeline(m, day_type)):
-                if s.space == space_id and (activities is None or s.activity in activities):
-                    minutes_used[i] = True
-        return [sum(minutes_used[h * 60:(h + 1) * 60]) / 60 for h in range(24)]
+        key = ("presence", day_type, space_id, frozenset(activities) if activities is not None else None)
+        if key not in self._cache:
+            minutes_used = [False] * MINUTES_PER_DAY
+            for m in self.members:
+                for i, s in enumerate(self.member_timeline(m, day_type)):
+                    if s.space == space_id and (activities is None or s.activity in activities):
+                        minutes_used[i] = True
+            self._cache[key] = [sum(minutes_used[h * 60:(h + 1) * 60]) / 60 for h in range(24)]
+        return list(self._cache[key])
 
     def occupancy(self, day_type: str, activity: str | None = None) -> pd.DataFrame:
         """24 列 × 各空間：每小時平均人數。可指定 activity（例如 "sleep" 只算睡覺的人）。"""

@@ -72,6 +72,16 @@ class Tariff:
                 rows.append({"hour": h, "period": Period(rule["period"]), "price": rule["rate"]})
         return pd.DataFrame(rows).sort_values("hour").reset_index(drop=True)
 
+    def tou_monthly_bill(self, plan_id: str, energy_charge: float, kwh_per_month: float) -> dict[str, float]:
+        """時間電價月電費（元）。energy_charge 為逐時「度數 × 當時費率」加總（流動電費）。
+        另加基本電費，以及每月總度數超過門檻部分的加價。"""
+        plan = self.plans[plan_id]
+        surcharge = plan["surcharge"]
+        extra = max(0.0, kwh_per_month - surcharge["over_kwh_per_month"]) * surcharge["add_per_kwh"]
+        basic = plan["basic_fee_per_month"]
+        return {"basic": basic, "energy": energy_charge, "surcharge": extra,
+                "total": basic + energy_charge + extra}
+
     def progressive_bill(self, kwh_per_month: float, summer: bool) -> float:
         """累進電價的月電費（元）。"""
         season = "summer" if summer else "non_summer"

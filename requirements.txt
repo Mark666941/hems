@@ -3,6 +3,8 @@ pandas>=2.2
 numpy>=1.26
 # 前端介面
 streamlit>=1.40
+# 靜態圖表（報告、README 用）
+matplotlib>=3.8
 # 最佳化（階段 6 進階用）
 pulp>=2.8
 # 測試
