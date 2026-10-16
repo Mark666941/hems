@@ -76,6 +76,19 @@ def analyze_month(_analyzer: Analyzer, settings_key: str, year: int, month: int,
     return table, recs, report, insights.daily_table(scenarios)
 
 
+@st.cache_data(max_entries=4, show_spinner="產生 PDF 報告…")
+def month_pdf(_analyzer: Analyzer, settings_key: str, year: int, month: int, plan_id: str, focus: str) -> bytes:
+    """整月分析報告 PDF（focus：數據分析要和基準比較的模式）。"""
+    from ui.pdf_report import month_report_pdf  # matplotlib 較慢載入，需要時才匯入
+
+    table, recs, _, daily = analyze_month(_analyzer, settings_key, year, month, plan_id)
+    plan_name = _analyzer.sim.tariff.plans[plan_id]["name"]
+    base = table.iloc[0]
+    price = base[f"{plan_name}(元)"] / base["月用電(kWh)"] if base["月用電(kWh)"] else 0.0
+    return month_report_pdf(year, month, _analyzer.sim.house.name, plan_name, table, recs, daily,
+                            insights.month_insights(daily, focus, price))
+
+
 @st.cache_data(max_entries=8, show_spinner="試算各電價方案的月電費…")
 def month_bills(_analyzer: Analyzer, settings_key: str, year: int, month: int) -> pd.DataFrame:
     """以一般習慣（基準）推演整月，換算三種電價方案的月電費（約 1 秒）。"""

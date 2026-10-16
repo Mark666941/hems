@@ -7,7 +7,7 @@ import pandas as pd
 import streamlit as st
 
 from ui import anomaly, charts, insights, whatif
-from ui.context import BASELINE, AppContext, analyze_month, annual_scenario, meter_comparison
+from ui.context import BASELINE, AppContext, analyze_month, annual_scenario, meter_comparison, month_pdf
 from ui.theme import page_header, tips_card
 
 METER_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "meter"
@@ -272,5 +272,8 @@ def _month(ctx: AppContext) -> None:
             st.write(r.detail)
             if r.note:
                 st.caption(f"※ {r.note}")
-    st.download_button("下載分析報告（Markdown）", report.encode("utf-8"), f"report_{year}-{month:02d}.md",
-                       "text/markdown")
+    c1, c2 = st.columns(2)
+    c1.download_button("下載分析報告（PDF）", month_pdf(ctx.analyzer, ctx.key, year, month, req_plan, focus),
+                       f"report_{year}-{month:02d}.pdf", "application/pdf", type="primary", width="stretch")
+    c2.download_button("下載分析報告（Markdown）", report.encode("utf-8"), f"report_{year}-{month:02d}.md",
+                       "text/markdown", width="stretch")
