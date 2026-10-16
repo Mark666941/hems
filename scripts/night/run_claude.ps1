@@ -27,7 +27,7 @@ function Write-FallbackReport([string]$reason) {
 }
 
 $allowed = @(
-    'Read(./**)', 'Edit(./**)', 'Write(./**)', 'Glob', 'Grep',   # 只能讀寫工作資料夾內的檔案
+    'Read(./**)', 'Edit(./**)', 'Glob', 'Grep',                  # 只能讀寫工作資料夾內的檔案（Edit 規則涵蓋所有寫檔工具）
     'Bash(git *)',                                               # git 指令
     'Bash(python -m pytest*)', 'Bash(pytest*)'                   # 執行測試
 )
@@ -47,6 +47,7 @@ $start = Get-Date
 "[$($start.ToString('yyyy-MM-dd HH:mm:ss'))] 啟動 Claude Code（上限 $Minutes 分鐘）於 $WorkDir" | Out-File $Log -Encoding utf8
 $p = Start-Process -FilePath $claude -ArgumentList $argList -WorkingDirectory $WorkDir -NoNewWindow -PassThru `
         -RedirectStandardInput $PromptFile -RedirectStandardOutput "$Log.out" -RedirectStandardError "$Log.err"
+$null = $p.Handle   # 先取得程序控制代碼，結束後才讀得到結束代碼
 
 if (-not $p.WaitForExit($Minutes * 60 * 1000)) {
     # 超過時間上限：強制結束 Claude Code 與它啟動的所有子程序（pytest、git 等）

@@ -43,7 +43,9 @@ if not exist "%WORKTREE%\.git" (
     git worktree add "%WORKTREE%" %BRANCH% >> "%LOG%.bat.txt" 2>&1 || goto :fail
 )
 cd /d "%WORKTREE%" || goto :fail
-git rev-parse --abbrev-ref HEAD | findstr /x "%BRANCH%" >nul || goto :fail
+set "CUR="
+for /f "delims=" %%b in ('git branch --show-current') do set "CUR=%%b"
+if /i not "%CUR%"=="%BRANCH%" goto :fail
 
 rem --- 3. bring in the latest main (fast-forward only; never rewrites history) ---
 git merge --ff-only main >> "%LOG%.bat.txt" 2>&1
