@@ -89,7 +89,7 @@ def ensure_session(default_ui: dict) -> Store:
     store = get_store()
     if "user_id" not in st.session_state:
         if login_required(store):
-            _login_screen(store)
+            _login_screen(store, default_ui)
             st.stop()
         st.session_state.user_id = store.local_user()
     if "profile_id" not in st.session_state:
@@ -101,7 +101,7 @@ def ensure_session(default_ui: dict) -> Store:
     return store
 
 
-def _login_screen(store: Store) -> None:
+def _login_screen(store: Store, default_ui: dict) -> None:
     st.markdown('<div class="hems-head"><div class="title"><small>HEMS · 居家能源管理</small>登入</div></div>',
                 unsafe_allow_html=True)
     left, _ = st.columns([2, 3])
@@ -134,6 +134,13 @@ def _login_screen(store: Store) -> None:
                     except ValueError as e:
                         st.error(str(e))
         st.caption("密碼以 PBKDF2-SHA256 加鹽雜湊後儲存，系統不會保存明碼。")
+        st.divider()
+        if st.button("👀 以示範帳號試用（免註冊）", width="stretch", key="demo_login",
+                     help="已填好房型、家電使用紀錄與帳單；每次進入都會重設，修改不會保留"):
+            from ui.demo import enter_demo  # 避免循環匯入
+            st.session_state.user_id = enter_demo(store, default_ui)
+            log.info("進入示範帳號")
+            st.rerun()
 
 
 # ---------- 自動存檔 ----------
@@ -209,6 +216,12 @@ def account_dialog(default_ui: dict) -> None:
         profile_id = store.create_profile(user_id, name, settings, ui)
         _activate(store, user_id, profile_id, default_ui)
         st.session_state.flash = f"已建立並切換到「{name.strip()}」"
+        st.rerun()
+    if st.button("🧪 載入示範設定檔", help="新增兩個示範設定檔（四口之家、小家庭），含家電使用紀錄與帳單；原有設定檔不受影響"):
+        from ui.demo import create_demo_profiles  # 避免循環匯入
+        profile_id = create_demo_profiles(store, user_id, default_ui)
+        _activate(store, user_id, profile_id, default_ui)
+        st.session_state.flash = "已新增示範設定檔並切換過去"
         st.rerun()
 
     st.divider()

@@ -134,13 +134,27 @@ class Store:
 
     def local_user(self) -> int:
         """桌面版的「本機使用者」（沒有密碼、不能從網頁登入）。"""
+        return self.passwordless_user(LOCAL_USER)
+
+    def passwordless_user(self, username: str) -> int:
+        """沒有密碼的內建使用者（本機使用者、示範帳號）：不存在就建立。不能用帳號密碼登入。"""
         with Session(self.engine) as s, s.begin():
-            user = s.scalar(select(User).where(User.username == LOCAL_USER))
+            user = s.scalar(select(User).where(User.username == username))
             if user is None:
-                user = User(username=LOCAL_USER, created_at=_now())
+                user = User(username=username, created_at=_now())
                 s.add(user)
                 s.flush()
             return user.id
+
+    def reset_user(self, user_id: int) -> None:
+        """刪除使用者的所有設定檔與紀錄（示範帳號每次進入時重設用）。"""
+        with Session(self.engine) as s, s.begin():
+            ids = s.scalars(select(Profile.id).where(Profile.user_id == user_id)).all()
+            for r in s.scalars(select(UsageRecord).where(UsageRecord.profile_id.in_(ids))):
+                s.delete(r)
+            for p in s.scalars(select(Profile).where(Profile.user_id == user_id)):
+                s.delete(p)
+            s.get(User, user_id).last_profile_id = None
 
     def username(self, user_id: int) -> str:
         with Session(self.engine) as s:

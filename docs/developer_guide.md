@@ -43,6 +43,7 @@ app.py（每次使用者操作都會從頭執行一次）
 | 介面 | `ui/pdf_report.py` | 整月分析報告 PDF |
 | 介面 | `ui/wizard.py` | 新手引導精靈 |
 | 介面 | `ui/logs.py` | 錯誤記錄與頁面錯誤處理 |
+| 介面 | `ui/demo.py` | 示範帳號（登入畫面免註冊試用，每次進入重設）與示範設定檔 |
 | 介面 | `ui/floorplan.py` + `floorplan_frontend/` | 智慧平面圖自訂元件（拖曳、遙控器、一天動畫播放） |
 | 介面 | `ui/pages/*.py` | 各頁面，每頁一個 `render(ctx)` |
 
