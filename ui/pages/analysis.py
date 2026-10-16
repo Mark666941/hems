@@ -4,9 +4,9 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from ui import charts
+from ui import charts, insights
 from ui.context import BASELINE, AppContext, analyze_month
-from ui.theme import page_header
+from ui.theme import page_header, tips_card
 
 
 def render(ctx: AppContext) -> None:
@@ -125,21 +125,46 @@ def _month(ctx: AppContext) -> None:
     c1, c2 = st.columns([1, 3])
     ym = c1.selectbox("月份", months, index=months.index((ctx.day.year, ctx.day.month)),
                       format_func=lambda x: f"{x[0]} 年 {x[1]} 月")
-    c2.caption("整月分析會對每一天、每個模式各做一次最佳化，並比較三種電價方案的月電費。")
+    c2.caption("整月分析會對每一天、每個模式各做一次最佳化，畫出每日用電、累積電費、溫度與冷氣用電的關係，"
+               "並比較三種電價方案的月電費。")
     if st.button("執行整月分析", type="primary"):
         st.session_state.month_request = (ym, ctx.plan_id, ctx.key)
     request = st.session_state.get("month_request")
     if not (request and request[2] == ctx.key):
         return
     (year, month), req_plan, _ = request
-    mtable, recs, report = analyze_month(ctx.analyzer, ctx.key, year, month, req_plan)
+    mtable, recs, report, daily = analyze_month(ctx.analyzer, ctx.key, year, month, req_plan)
     plan_col = f"{ctx.tariff.plans[req_plan]['name']}(元)"
-    st.altair_chart(charts.metric_bars(mtable, [
-        (plan_col, "月電費（元）"), ("月用電(kWh)", "月用電（kWh）"), ("碳排放(kg)", "碳排放（kg CO2e）"),
-        ("最大需量(kW)", "最大需量（kW）"), ("平均舒適時間比例(%)", "舒適時間比例（%）"),
-        ("平均PPD(%)", "平均 PPD（%）")]))
+
+    st.markdown(f"**各模式每日用電**｜{year} 年 {month} 月（滑鼠移到點上看當天日均溫）")
+    st.altair_chart(charts.month_daily_lines(daily), width="stretch")
+    left, right = st.columns(2)
+    with left:
+        st.markdown("**累積流動電費**（不含基本電費）")
+        st.altair_chart(charts.month_daily_lines(daily, "cum_cost", "累積電費（元）"), width="stretch")
+    with right:
+        st.markdown("**室外溫度與冷氣用電**（每點一天，虛線為迴歸線）")
+        st.altair_chart(charts.temp_vs_ac(daily), width="stretch")
+
+    # 數據分析式建議：和目前選的模式比較；目前是白天／夜間切換時，用月電費最低的模式
+    modes = mtable.iloc[1:]
+    focus = (ctx.mode_schedule.name if ctx.mode_schedule.name in set(modes["模式"])
+             else modes.sort_values(plan_col).iloc[0]["模式"])
+    base_row = mtable.iloc[0]
+    price = base_row[plan_col] / base_row["月用電(kWh)"] if base_row["月用電(kWh)"] else 0.0
+    st.subheader("數據分析")
+    found = insights.month_insights(daily, focus, price)
+    tips_card([(i.icon, i.html()) for i in found] or [("✅", "這個月的用電沒有明顯的規律需要注意。")])
+
+    with st.expander("各模式月指標比較"):
+        st.altair_chart(charts.metric_bars(mtable, [
+            (plan_col, "月電費（元）"), ("月用電(kWh)", "月用電（kWh）"), ("碳排放(kg)", "碳排放（kg CO2e）"),
+            ("最大需量(kW)", "最大需量（kW）"), ("平均舒適時間比例(%)", "舒適時間比例（%）"),
+            ("平均PPD(%)", "平均 PPD（%）")]))
     with st.expander("完整指標表"):
         st.dataframe(mtable.round(1), hide_index=True, width="stretch")
+        st.download_button("下載每日資料 CSV", daily.to_csv(index=False).encode("utf-8-sig"),
+                           f"daily_{year}-{month:02d}.csv", "text/csv")
     st.subheader("節省建議")
     for i, r in enumerate(recs):
         with st.container(border=True):

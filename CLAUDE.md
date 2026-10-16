@@ -53,7 +53,7 @@ hems/
 ├── assets/            # 程式圖示（scripts/make_icon.py 產生）；桌面捷徑由 scripts/create_shortcut.py 建立
 ├── .vscode/           # VS Code 啟動設定（F5）與虛擬環境設定
 ├── ui/                # 介面：settings.py（設定 ↔ 核心模組）、context.py（各頁共用資料與快取）、account.py（登入、設定檔、自動存檔）、
-│                      #   theme.py（科技感樣式、KPI 卡、比較條）、charts.py（Altair 互動圖表）、family.py（家庭成員）、usage.py（使用紀錄與預測計算）、
+│                      #   theme.py（科技感樣式、KPI 卡、比較條）、charts.py（Altair 互動圖表）、family.py（家庭成員）、usage.py（使用紀錄與預測計算）、insights.py（整月每日資料與數據分析建議）、
 │                      #   floorplan.py + floorplan_frontend/（智慧平面圖自訂元件：拖曳家電、遙控器）、
 │                      #   pages/（home 首頁、plan 平面圖、analysis 分析、forecast 預測、settings 設定、about 說明）
 ├── .streamlit/        # Streamlit 主題設定
@@ -131,7 +131,7 @@ hems/
 - [x] 第 3 批：資料庫儲存（SQLite／PostgreSQL、帳號登入、自動存檔、多組設定檔、匯出／匯入）
 - [x] 第 4 批：平面圖顯示家庭成員人物（依作息移動、點選看作息與個人時間、改名、新增／刪除成員、拖曳＝臨時變動）
 - [x] 第 5 批（依賴第 3 批的資料庫，第 3 批完成後才能做）：家電使用紀錄（每週習慣、每日紀錄、帳單度數）＋獨立預測頁（本月／下月用電與電費）
-- [ ] 第 6a 批：整月分析改折線圖（各模式每日用電、累積電費、室外溫度與冷氣用電關係）與數據分析式建議
+- [x] 第 6a 批：整月分析改折線圖（各模式每日用電、累積電費、室外溫度與冷氣用電關係）與數據分析式建議
 - [ ] 第 6b 批（需要網路下載資料，白天工作負責）：自選地區即時天氣（Open-Meteo，選到鄉鎮市區）
 
 ## 優化方案（全部 15 項都做；不訂日期，照進度做）

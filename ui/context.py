@@ -17,7 +17,7 @@ from core.data_source import CwaCsvWeatherSource
 from core.metrics import Analyzer
 from core.optimizer import ModeSchedule
 from core.simulator import ControlPlan, SimulationResult
-from ui import usage
+from ui import insights, usage
 from ui.floorplan import apply_remote
 from ui.settings import build_analyzer
 
@@ -72,7 +72,7 @@ def analyze_month(_analyzer: Analyzer, settings_key: str, year: int, month: int,
     table, scenarios = _analyzer.compare_month(year, month, plan_id)
     recs = _analyzer.recommendations(year, month, plan_id, table, scenarios)
     report = _analyzer.report_markdown(year, month, plan_id, table, recs)
-    return table, recs, report
+    return table, recs, report, insights.daily_table(scenarios)
 
 
 @st.cache_data(max_entries=8, show_spinner="試算各電價方案的月電費…")
