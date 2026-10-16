@@ -45,6 +45,11 @@ $argList = @('-p', '--permission-mode', 'dontAsk', '--permission-prompts', 'none
 
 $claude = (Get-Command claude -ErrorAction Stop).Source
 $start = Get-Date
+# 在工作說明最上方加上開始時間與上限，讓 Claude 判斷「時間還夠不夠做下一項」
+$promptWithTime = Join-Path $env:TEMP "hems_night_prompt_$($start.ToString('yyyyMMdd_HHmmss')).md"
+$header = "本次開始時間：$($start.ToString('HH:mm'))；時間上限 $Minutes 分鐘（到 $($start.AddMinutes($Minutes).ToString('HH:mm')) 會被強制結束）。"
+[IO.File]::WriteAllText($promptWithTime, $header + "`n`n" + [IO.File]::ReadAllText($PromptFile), (New-Object Text.UTF8Encoding $false))
+$PromptFile = $promptWithTime
 "[$($start.ToString('yyyy-MM-dd HH:mm:ss'))] 啟動 Claude Code（上限 $Minutes 分鐘）於 $WorkDir" | Out-File $Log -Encoding utf8
 $p = Start-Process -FilePath $claude -ArgumentList $argList -WorkingDirectory $WorkDir -NoNewWindow -PassThru `
         -RedirectStandardInput $PromptFile -RedirectStandardOutput "$Log.out" -RedirectStandardError "$Log.err"
