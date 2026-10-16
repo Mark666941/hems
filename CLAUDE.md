@@ -36,7 +36,7 @@ hems/
 ├── data/meter/        # 智慧插座／電表 CSV（目前只有示範用合成資料）
 ├── data/user/         # 本機使用者資料庫 hems.db（不進 git）
 ├── data/public/       # 台電公開用電資料（真實驗證用，scripts/fetch_taipower_open_data.py）
-├── scripts/           # 天氣下載、示範電表資料產生
+├── scripts/           # 天氣下載、示範電表資料產生、ml_forecast.py（B1b 混合用電預測模型比較）
 ├── core/
 │   ├── models.py      # 資料結構：空間、家電、房屋、使用者、模式
 │   ├── data_source.py # 資料來源介面（模擬 / 未來感測器）
@@ -140,7 +140,7 @@ hems/
 夜間任務需要的套件已預先安裝：scikit-learn、ruff。
 - [x] 1. D1 ruff 程式碼檢查 + D2 GitHub Actions 自動測試與徽章（夜間）
 - [x] 2. B1a 下載並整理台電公開資料（全國住宅每戶平均月用電 2018–2026、台中住宅總用電 2016–2026，data/public/）
-- [ ] 3. B1b 機器學習用電預測：物理模擬 + scikit-learn 梯度提升樹修正殘差的混合模型，與純物理、純 ML 比較
+- [x] 3. B1b 機器學習用電預測：物理模擬 + scikit-learn 梯度提升樹修正殘差的混合模型，與純物理、純 ML 比較
       （時間序列交叉驗證；依賴 B1a）（夜間）
 - [ ] 4. A3 依窗戶方位計算日射（太陽位置、西曬）（白天工作負責：改 core）
 - [ ] 5. C2 平面圖一天動畫播放（瀏覽器端播放，不重算）（夜間）
