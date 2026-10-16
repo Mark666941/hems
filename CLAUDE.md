@@ -49,7 +49,8 @@ hems/
 ├── run_app.py         # 一鍵啟動：桌面視窗（pywebview）或瀏覽器；VS Code 按 F5、雙擊 start_hems.bat 或桌面捷徑
 ├── assets/            # 程式圖示（scripts/make_icon.py 產生）；桌面捷徑由 scripts/create_shortcut.py 建立
 ├── .vscode/           # VS Code 啟動設定（F5）與虛擬環境設定
-├── ui/                # 介面輔助：settings.py（設定 ↔ 核心模組）、charts.py（Altair 互動圖表）
+├── ui/                # 介面輔助：settings.py（設定 ↔ 核心模組）、charts.py（Altair 互動圖表）、
+│                      #   floorplan.py + floorplan_frontend/（智慧平面圖自訂元件：拖曳家電、遙控器）
 ├── .streamlit/        # Streamlit 主題設定
 ├── docs/images/       # 里程碑圖表（README 用）
 ├── docs/reports/      # 整月分析報告範例（Markdown）

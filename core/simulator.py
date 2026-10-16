@@ -49,6 +49,7 @@ class ControlPlan:
     ac_on：空間 id → 24 小時冷氣運轉比例（0–1）；未指定時「有人就開、涼爽時開窗」
     task_starts：家電 id → 可移轉工作的開始時間（時，可有小數）
     appliance_factors：空間 id → {家電 id → 24 小時調整係數}，例如照明調光、除濕機關閉
+    appliance_forced：空間 id → {家電 id → 24 小時手動覆寫}（遙控器），None 代表自動
     """
 
     name: str = "基準"
@@ -57,6 +58,7 @@ class ControlPlan:
     ac_on: dict[str, list[float]] = field(default_factory=dict)
     task_starts: dict[str, float] = field(default_factory=dict)
     appliance_factors: dict[str, dict[str, list[float]]] = field(default_factory=dict)
+    appliance_forced: dict[str, dict[str, list[float | None]]] = field(default_factory=dict)
 
     def setpoint_for(self, space_id: str) -> list[float]:
         return list(self.setpoints.get(space_id, [self.default_setpoint] * 24))
@@ -181,6 +183,7 @@ class Simulator:
                 setpoint_c=control.setpoint_for(space.id),
                 ac_on=control.ac_on.get(space.id),
                 appliance_factors=control.appliance_factors.get(space.id),
+                appliance_forced=control.appliance_forced.get(space.id),
             )
             for a in space.appliances:
                 if a.id not in df.columns:

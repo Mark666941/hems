@@ -42,6 +42,12 @@ def to_key(settings: dict) -> str:
     return json.dumps(settings, ensure_ascii=False, sort_keys=True)
 
 
+def sim_key(settings: dict) -> str:
+    """模擬用的快取 key：排除平面圖上的圖示與房間位置（只影響畫面，不影響計算），
+    在同一房間內拖曳圖示時不必重新最佳化。"""
+    return to_key({k: v for k, v in settings.items() if k != "layout"})
+
+
 def build_house(settings: dict) -> House:
     house = house_from_config(settings["house"], load_space_templates(), load_appliance_catalog())
     for key, edit in settings["appliance_edits"].items():

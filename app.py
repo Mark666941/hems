@@ -1,18 +1,19 @@
 """HEMS 居家能源管理系統：Streamlit 前端。
 
-執行：streamlit run app.py
+執行：streamlit run app.py（或 python run_app.py 開桌面視窗）
 
 版面：
-- 側邊欄（快速設定）：日期、電價方案、模式排程、舒適偏好
-- 分頁（結果區）：總覽、模式比較、家電排程、室內環境、整月分析與建議
-- 分頁（設定區）：客製化房型、家電功率、作息時間
+- 左側（可調整的選項）：日期與模擬時間、電價方案、模式排程、舒適偏好、格局與房間尺寸
+- 右側分頁：
+  🏠 智慧平面圖：房間尺寸標示、家電圖示（可拖曳）、即時用電、遙控器、時間地點溫度狀態列
+  📊 總覽、⚖️ 模式比較、🗓️ 家電排程、🌡️ 室內環境、📅 整月分析與建議、⚙️ 進階設定、📖 方法說明
 所有計算都呼叫 core/ 的模組；設定以 JSON 字串為 key 快取，相同設定不重算。
 """
 from __future__ import annotations
 
 import copy
 import json
-from datetime import date, time
+from datetime import date, datetime, time
 
 import pandas as pd
 import streamlit as st
@@ -21,10 +22,13 @@ from core.data_source import CwaCsvWeatherSource, load_representative_days
 from core.metrics import Analyzer
 from core.models import load_space_templates
 from core.optimizer import MODE_ORDER, ModeSchedule
-from core.simulator import SimulationResult
+from core.simulator import ControlPlan, SimulationResult
 from ui import charts
+from ui.floorplan import (ADDABLE, add_appliance, apply_remote, build_payload, default_spot, ensure_layout,
+                          floorplan, move_appliance, move_room, remote_command, remove_appliance, room_dims,
+                          set_room_size)
 from ui.settings import (ROUTINE_LABELS, apply_routine_times, apply_spaces_table, build_analyzer, build_house,
-                         default_settings, routine_times, spaces_table, to_key)
+                         default_settings, routine_times, sim_key, spaces_table)
 
 st.set_page_config(page_title="HEMS 居家能源管理模擬", page_icon="⚡", layout="wide")
 
@@ -49,9 +53,23 @@ def compare_day(_analyzer: Analyzer, settings_key: str, day: date, plan_id: str)
 
 @st.cache_data(max_entries=16, show_spinner="依模式排程最佳化中…")
 def run_schedule(_analyzer: Analyzer, settings_key: str, day: date, plan_id: str,
-                 by_hour: tuple[str, ...], name: str):
-    result = _analyzer.opt.optimize(day, ModeSchedule(list(by_hour), name), plan_id).result
-    return result, _analyzer.day_metrics(result)
+                 by_hour: tuple[str, ...], name: str) -> tuple[ControlPlan, SimulationResult]:
+    r = _analyzer.opt.optimize(day, ModeSchedule(list(by_hour), name), plan_id)
+    return r.plan, r.result
+
+
+@st.cache_data(max_entries=32, show_spinner=False)
+def run_with_remote(_analyzer: Analyzer, _plan: ControlPlan, settings_key: str, day: date, plan_id: str,
+                    by_hour: tuple[str, ...], remote_key: str):
+    """最佳化結果 + 遙控器手動覆寫，重新推演一天（約 0.1 秒）。"""
+    plan = apply_remote(_plan, json.loads(remote_key)) if remote_key != "{}" else _plan
+    result = _analyzer.sim.run(day, plan_id, plan) if remote_key != "{}" else None
+    return plan, result
+
+
+@st.cache_data(max_entries=32, show_spinner=False)
+def day_metrics(_analyzer: Analyzer, _result: SimulationResult, cache_key: str) -> dict:
+    return _analyzer.day_metrics(_result)
 
 
 @st.cache_data(max_entries=4, show_spinner="整月分析中（每天各模式都要最佳化，約 15 秒）…")
@@ -74,9 +92,28 @@ if "settings" not in st.session_state:
 settings: dict = st.session_state.settings
 
 
-def update_settings(new: dict) -> None:
+def update_settings(new: dict, message: str | None = None) -> None:
     st.session_state.settings = new
+    if message:
+        st.session_state.flash = message      # 重新執行後再顯示提示
     st.rerun()
+
+
+def room_comfort(analyzer: Analyzer, result: SimulationResult, hour: int) -> dict[str, str]:
+    """各房間該小時的舒適狀態（ok／warm／cool）；沒人的房間不列入。"""
+    opt = analyzer.opt
+    season, prefs = opt.season(result.day)
+    deadband = opt.comfort["evaluation_deadband_c"]
+    climate = result.climate.set_index(["space_id", "hour"])["room_temp_c"]
+    status = {}
+    for sid, ctx in opt.contexts(result.day_type, season).items():
+        if ctx.awake[hour] + ctx.asleep[hour] <= 0 or (sid, hour) not in climate.index:
+            continue
+        awake, asleep = opt._ideal(ctx, hour, prefs)
+        ideal = asleep if ctx.is_sleep[hour] else awake
+        diff = climate[(sid, hour)] - ideal
+        status[sid] = "ok" if abs(diff) <= deadband else ("warm" if diff > 0 else "cool")
+    return status
 
 
 # ---------- 側邊欄：快速設定 ----------
@@ -84,7 +121,8 @@ def update_settings(new: dict) -> None:
 dates = available_dates()
 rep = load_representative_days()
 with st.sidebar:
-    st.header("⚡ 快速設定")
+    st.header("⚡ HEMS 控制台")
+    st.subheader("日期與時間")
     preset = st.segmented_control("快速選擇", ["夏季代表日", "冬季代表日", "自選日期"], default="夏季代表日")
     if preset == "夏季代表日":
         day = rep["summer"]
@@ -92,9 +130,11 @@ with st.sidebar:
         day = rep["winter"]
     else:
         day = st.date_input("日期", value=rep["summer"], min_value=dates[0], max_value=dates[-1])
+    sim_hour = st.slider("模擬時間（時）", 0, 23, value=datetime.now().hour, format="%d:00",
+                         help="平面圖顯示這個時刻的室溫與家電用電；遙控器操作從這個時刻起生效")
 
     try:
-        analyzer = get_analyzer(to_key(settings))
+        analyzer = get_analyzer(sim_key(settings))
     except (ValueError, KeyError) as e:
         st.error(f"設定有誤：{e}")
         if st.button("恢復預設設定"):
@@ -128,28 +168,123 @@ with st.sidebar:
     st.subheader("舒適偏好")
     comfort = settings["modes"]["comfort"]["seasons"]
     c1, c2 = st.columns(2)
-    awake = c1.number_input("夏季清醒 °C", 22.0, 30.0, float(comfort["cooling"]["preferred_awake_c"]), 0.5)
-    asleep = c2.number_input("夏季睡眠 °C", 22.0, 30.0, float(comfort["cooling"]["preferred_sleep_c"]), 0.5)
+    awake = c1.number_input("夏季清醒 °C", 22.0, 30.0, float(comfort["cooling"]["preferred_awake_c"]), 0.5, format="%.1f")
+    asleep = c2.number_input("夏季睡眠 °C", 22.0, 30.0, float(comfort["cooling"]["preferred_sleep_c"]), 0.5, format="%.1f")
     if (awake, asleep) != (comfort["cooling"]["preferred_awake_c"], comfort["cooling"]["preferred_sleep_c"]):
         new = copy.deepcopy(settings)
         new["modes"]["comfort"]["seasons"]["cooling"].update(preferred_awake_c=awake, preferred_sleep_c=asleep)
         update_settings(new)
 
-key = to_key(settings)
+    # ----- 格局與房間尺寸 -----
+    templates = load_space_templates()
+    house = analyzer.sim.house
+    layout = ensure_layout(settings, house, templates)
+    st.subheader("格局與房間尺寸")
+    cfg_by_id = {s["id"]: s for s in settings["house"]["spaces"]}
+    sizable = [s for s in house.spaces if s.area_ping > 0]
+    room_id = st.selectbox("房間", [s.id for s in sizable], format_func=lambda i: house.get_space(i).name)
+    w_now, d_now = room_dims(cfg_by_id[room_id], layout["rooms"][room_id], templates)
+    c1, c2 = st.columns(2)
+    width = c1.number_input("寬（m）", 1.0, 20.0, round(w_now, 2), 0.1, key=f"w_{room_id}")
+    depth = c2.number_input("深（m）", 1.0, 20.0, round(d_now, 2), 0.1, key=f"d_{room_id}")
+    st.caption(f"面積 {width * depth:.1f} m² ＝ {width * depth / 3.3058:.2f} 坪（冷房負載依面積重算）")
+    c1, c2 = st.columns(2)
+    if c1.button("套用尺寸", width="stretch"):
+        update_settings(set_room_size({**settings, "layout": layout}, room_id, width, depth),
+                        f"{house.get_space(room_id).name}已改為 {width:.2f} × {depth:.2f} m")
+    if c2.button("自動排列", width="stretch", help="清除手動調整的房間與家電位置，重新自動排列"):
+        new = copy.deepcopy(settings)
+        new["layout"] = {"rooms": {}, "appliances": {}}
+        update_settings(new, "已重新自動排列格局")
+
+key = sim_key(settings)
 table, sims = compare_day(analyzer, key, day, plan_id)
-selected, selected_metrics = run_schedule(analyzer, key, day, plan_id, tuple(mode_schedule.by_hour),
-                                          mode_schedule.name)
+base_plan, base_result = run_schedule(analyzer, key, day, plan_id, tuple(mode_schedule.by_hour), mode_schedule.name)
+
+# 遙控器的手動覆寫只屬於「這一天」；換日期時清除
+if st.session_state.get("remote_day") != str(day):
+    st.session_state.remote, st.session_state.remote_day = {}, str(day)
+remote: dict = st.session_state.remote
+remote_key = json.dumps(remote, sort_keys=True)
+effective_plan, remote_result = run_with_remote(analyzer, base_plan, key, day, plan_id,
+                                                tuple(mode_schedule.by_hour), remote_key)
+selected = remote_result if remote_result is not None else base_result
+selected_metrics = day_metrics(analyzer, selected, f"{key}|{day}|{plan_id}|{mode_schedule.by_hour}|{remote_key}")
 baseline_metrics = table.iloc[0]
+if remote:
+    mode_schedule = ModeSchedule(mode_schedule.by_hour, f"{mode_schedule.name}＋遙控")
 
 st.title("居家能源管理系統（HEMS）模擬與最佳化")
 st.caption(f"{analyzer.sim.house.name}｜{len(analyzer.sim.schedule.members)} 人｜"
            f"天氣：中央氣象署臺中測站逐時觀測｜電價：台電 {tariff.source['effective_date']} 起實施費率")
 
-tabs = st.tabs(["📊 總覽", "⚖️ 模式比較", "🗓️ 家電排程", "🌡️ 室內環境", "📅 整月分析與建議", "⚙️ 客製化設定", "📖 方法說明"])
+if "flash" in st.session_state:
+    st.toast(st.session_state.pop("flash"), icon="✅")
+
+tabs = st.tabs(["🏠 智慧平面圖", "📊 總覽", "⚖️ 模式比較", "🗓️ 家電排程", "🌡️ 室內環境", "📅 整月分析與建議",
+                "⚙️ 進階設定", "📖 方法說明"])
+
+# ---------- 智慧平面圖 ----------
+
+with tabs[0]:
+    hourly = selected.hourly.set_index("hour")
+    status = {
+        "date": str(day), "weekday": f"週{WEEKDAY_NAMES[day.weekday()]}・{day_type}", "time": f"{sim_hour:02d}:00",
+        "location": "臺中市｜中央氣象署臺中測站", "outdoor_temp": float(hourly.loc[sim_hour, "temp_c"]),
+        "rh": float(hourly.loc[sim_hour, "rh_pct"]), "house_kw": float(hourly.loc[sim_hour, "kwh"]),
+        "period": hourly.loc[sim_hour, "period_label"], "price": float(hourly.loc[sim_hour, "price"]),
+        "today_kwh": selected.total_kwh, "today_cost": selected.energy_cost, "mode": mode_schedule.name,
+    }
+    payload = build_payload(settings, house, layout, templates, selected, effective_plan, remote, sim_hour,
+                            status, room_comfort(analyzer, selected, sim_hour))
+    event = floorplan(payload)
+
+    # 處理平面圖送回來的操作（每個操作有唯一的 nonce，避免重新整理時重複執行）
+    if event and event.get("nonce") != st.session_state.get("last_nonce"):
+        st.session_state.last_nonce = event["nonce"]
+        working = {**settings, "layout": layout}
+        action = event.get("action")
+        if action == "move_appliance":
+            new, msg = move_appliance(working, house, layout, templates, event["key"], event["x"], event["y"])
+            moved_key = event["key"]
+            if msg and msg.startswith("已將") and moved_key in remote:   # 搬到別的房間：取消原本的遙控設定
+                st.session_state.remote.pop(moved_key)
+            update_settings(new, msg)
+        elif action == "move_room":
+            update_settings(move_room(working, layout, event["id"], event["x"], event["y"]))
+        elif action == "remote":
+            state = next(a for a in payload["appliances"] if a["key"] == event["key"])
+            st.session_state.remote = remote_command(remote, event["key"], event["command"], event.get("value"),
+                                                     state, sim_hour)
+            st.rerun()
+        elif action == "remove":
+            space_id, appliance_id = event["key"].split("/")
+            st.session_state.remote.pop(event["key"], None)
+            update_settings(*remove_appliance(working, house, space_id, appliance_id))
+        elif action == "add":
+            room = layout["rooms"][event["room"]]
+            w, d = room_dims(cfg_by_id[event["room"]], room, templates)
+            spot = default_spot(event["type"], room["x"], room["y"], w, d)
+            new, msg = add_appliance(working, house, event["room"], event["type"], spot=spot)
+            if new is working:
+                st.toast(msg, icon="⚠️")
+            else:
+                update_settings(new, msg)
+
+    with st.expander("這張圖怎麼用？"):
+        st.markdown(f"""
+- **房間**：牆線內標示寬 × 深（公尺）、坪數與這個時刻的室溫（綠＝舒適、橘＝偏熱、藍＝偏冷、灰＝無人）。
+  房間尺寸在左側「格局與房間尺寸」修改，冷房負載會依新面積重算；切到「調整格局」可以拖曳房間排成實際格局。
+- **家電圖示**：可新增{ "、".join(ADDABLE.values()) }。右上綠點＝運轉中，左上橘點＝遙控器手動控制，下方為這個時刻的用電（W）。
+  拖到別的房間，家電就會搬過去，模擬（例如冷氣負責哪個房間）隨之重算。
+- **遙控器**：點一下家電圖示開啟。操作從左側「模擬時間」那一小時起生效到當天結束，
+  例如把時間調到 17:00、遠端打開主臥冷氣，就能看到「下班前預冷」對用電與室溫的影響。
+- **狀態列**：日期、模擬時間、地點、室外溫濕度、目前電價時段、全屋即時用電、今日累計用電與電費。
+""")
 
 # ---------- 總覽 ----------
 
-with tabs[0]:
+with tabs[1]:
     st.subheader(f"{mode_schedule.name} vs. {BASELINE}")
     kpis = [("用電", "用電(kWh)", "{:.1f} kWh", "inverse"), ("流動電費", "流動電費(元)", "{:.0f} 元", "inverse"),
             ("尖峰占比", "尖峰占比(%)", "{:.0f}%", "inverse"), ("舒適時間", "舒適時間比例(%)", "{:.0f}%", "normal"),
@@ -178,7 +313,7 @@ with tabs[0]:
 
 # ---------- 模式比較 ----------
 
-with tabs[1]:
+with tabs[2]:
     st.subheader(f"{day} 四種模式比較")
     st.caption("每個模式都是同一套最佳化（電費 + 舒適權重 × 不舒適度）搭配不同參數；基準為一般家庭習慣。")
     st.altair_chart(charts.mode_lines(sims), width="stretch")
@@ -195,7 +330,7 @@ with tabs[1]:
 
 scenario_options = {mode_schedule.name: selected, **{n: r for n, r in sims.items() if n != mode_schedule.name}}
 
-with tabs[2]:
+with tabs[3]:
     scenario = st.selectbox("情境", list(scenario_options), key="gantt_scenario")
     result = scenario_options[scenario]
     st.markdown("**家電排程甘特圖**：每格代表該小時有用電，顏色深淺代表用電量")
@@ -221,7 +356,7 @@ with tabs[2]:
 
 # ---------- 室內環境 ----------
 
-with tabs[3]:
+with tabs[4]:
     opt = analyzer.opt
     ac_spaces = {s.id: s.name for s in opt.ac_spaces}
     c1, c2 = st.columns(2)
@@ -251,7 +386,7 @@ with tabs[3]:
 
 # ---------- 整月分析與建議 ----------
 
-with tabs[4]:
+with tabs[5]:
     months = sorted({(d.year, d.month) for d in dates})
     c1, c2 = st.columns([1, 3])
     ym = c1.selectbox("月份", months, index=months.index((day.year, day.month)),
@@ -281,8 +416,8 @@ with tabs[4]:
 
 # ---------- 客製化設定 ----------
 
-with tabs[5]:
-    st.subheader("客製化設定")
+with tabs[6]:
+    st.subheader("進階設定")
     st.caption("修改後按「套用」，所有結果會依新設定重新計算。設定只存在這次瀏覽，不會改到預設檔案。")
     templates = load_space_templates()
 
@@ -360,7 +495,7 @@ with tabs[5]:
 
 # ---------- 方法說明 ----------
 
-with tabs[6]:
+with tabs[7]:
     st.markdown("""
 ### 系統架構（五層）
 1. **輸入層**：房型（空間範本 × 數量）、家庭作息、中央氣象署逐時天氣、台電電價

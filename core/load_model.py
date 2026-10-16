@@ -278,7 +278,8 @@ class LoadModel:
     def space_hourly(self, space: Space, weather: pd.DataFrame, day_type: str,
                      setpoint_c: float | list[float] = 26.0,
                      ac_on: list[float] | None = None,
-                     appliance_factors: dict[str, list[float]] | None = None) -> pd.DataFrame:
+                     appliance_factors: dict[str, list[float]] | None = None,
+                     appliance_forced: dict[str, list[float | None]] | None = None) -> pd.DataFrame:
         """某空間 24 小時的逐時結果：各家電耗電（W）、冷房負載組成、COP 等。
 
         weather：24 列，需有 temp_c、rh_pct、solar_mj_m2。
@@ -286,6 +287,8 @@ class LoadModel:
         ac_on：每小時冷氣運轉比例（0–1）；None 時用「有人就開、室外涼爽時不開」。
         appliance_factors：家電 id → 24 小時調整係數（0–1），例如照明調光 0.7、除濕機關閉 0。
                            必要負載不可調整。
+        appliance_forced：家電 id → 24 小時手動覆寫（遙控器）；None 代表依自動規則，
+                          數值為運轉比例（0 = 關、1 = 全開、0.5 = 亮度 50%），不論有沒有人都照做。
         """
         setpoints = [setpoint_c] * 24 if isinstance(setpoint_c, (int, float)) else list(setpoint_c)
         ac_unit = space.get_appliance("air_conditioner")
@@ -304,6 +307,9 @@ class LoadModel:
                 if a.load_type is LoadType.ESSENTIAL:
                     raise ValueError(f"{a.name} 是必要負載，任何模式都不可調整")
                 hourly = [w * f for w, f in zip(hourly, appliance_factors[a.id])]
+            forced = (appliance_forced or {}).get(a.id)
+            if forced is not None:
+                hourly = [a.power_w * f if f is not None else w for w, f in zip(hourly, forced)]
             appliance_w[a.id] = hourly
         internal = [sum(v[h] for v in appliance_w.values()) for h in range(24)]
 

@@ -18,7 +18,7 @@ def app():
 
 def test_app_loads_without_errors(app):
     assert not app.exception and not app.error
-    assert len(app.tabs) == 7
+    assert len(app.tabs) == 8
     labels = [m.label for m in app.metric]
     assert labels[:6] == ["用電", "流動電費", "尖峰占比", "舒適時間", "平均 PPD", "碳排放"]
 

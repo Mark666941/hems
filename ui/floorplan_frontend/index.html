@@ -1,0 +1,425 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<title>HEMS 智慧平面圖</title>
+<style>
+  :root {
+    --bg: #fcfcfb; --card: #ffffff; --ink: #0b0b0b; --ink2: #52514e; --muted: #898781;
+    --line: #e1e0d9; --wall: #3a3936; --hall: #f1f0ec; --hatch: #e2e0d8; --grid: #ecebe6;
+    --blue: #2a78d6; --orange: #eb6834; --aqua: #1baf7a; --yellow: #eda100;
+    --good: #0ca30c; --warm: #ec835a; --cool: #2a78d6; --off: #b4b2ab;
+    --room-bedroom: #f3f6fb; --room-living_room: #fbf8f1; --room-kitchen: #f8f4ee;
+    --room-bathroom: #eef6f5; --room-utility: #f2f1ee; --room-other: #f5f5f3;
+    --shadow: 0 1px 2px rgba(0,0,0,.06), 0 4px 14px rgba(0,0,0,.07);
+  }
+  body.dark {
+    --bg: #1a1a19; --card: #242422; --ink: #f0efec; --ink2: #c3c2b7; --muted: #8f8d86;
+    --line: #34332f; --wall: #d6d4cc; --hall: #222220; --hatch: #2e2d2a; --grid: #262624;
+    --blue: #3987e5; --orange: #d95926; --aqua: #199e70; --yellow: #c98500; --cool: #3987e5;
+    --off: #5c5b56;
+    --room-bedroom: #1f2530; --room-living_room: #2a2720; --room-kitchen: #2a2521;
+    --room-bathroom: #1e2a28; --room-utility: #262624; --room-other: #252523;
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 4px 14px rgba(0,0,0,.35);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: transparent; color: var(--ink);
+         font-family: "Microsoft JhengHei", "Noto Sans TC", "PingFang TC", system-ui, sans-serif; }
+  #app { background: var(--bg); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }
+
+  .toolbar { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--line);
+             flex-wrap: wrap; }
+  .toolbar h2 { font-size: 16px; margin: 0; font-weight: 700; letter-spacing: .02em; }
+  .toolbar .sub { font-size: 12px; color: var(--muted); }
+  .seg { display: inline-flex; background: var(--hall); border-radius: 10px; padding: 3px; margin-left: auto; }
+  .seg button { border: 0; background: transparent; color: var(--ink2); font: inherit; font-size: 13px;
+                padding: 6px 12px; border-radius: 8px; cursor: pointer; }
+  .seg button.on { background: var(--card); color: var(--ink); box-shadow: var(--shadow); font-weight: 600; }
+
+  .main { display: flex; min-height: 420px; }
+  .plan-wrap { flex: 1; position: relative; min-width: 0; }
+  #plan { display: block; width: 100%; user-select: none; touch-action: none; }
+  .panel svg, .status svg, .legend svg { flex-shrink: 0; }
+  .panel { width: 280px; flex-shrink: 0; border-left: 1px solid var(--line); padding: 16px; display: flex;
+           flex-direction: column; gap: 14px; }
+  @media (max-width: 760px) { .main { flex-direction: column; } .panel { width: 100%; border-left: 0; border-top: 1px solid var(--line); } }
+
+  .room-name { font-size: 14px; font-weight: 700; fill: var(--ink); }
+  .room-area { font-size: 11.5px; fill: var(--ink2); }
+  .dim { font-size: 10.5px; fill: var(--muted); font-variant-numeric: tabular-nums; }
+  .dim-line { stroke: var(--muted); stroke-width: 1; }
+  .chip-text { font-size: 11.5px; font-weight: 600; fill: #fff; font-variant-numeric: tabular-nums; }
+  .watt { font-size: 11px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .appliance { cursor: grab; }
+  .appliance:active { cursor: grabbing; }
+  .room.editable { cursor: move; }
+  .hint { margin: 0 14px 12px; font-size: 12px; color: var(--muted); display: inline-flex; gap: 6px; align-items: center;
+          background: var(--card); border: 1px solid var(--line); padding: 5px 10px; border-radius: 8px; }
+
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 14px; box-shadow: var(--shadow); }
+  .remote-head { display: flex; gap: 12px; align-items: center; }
+  .remote-icon { width: 44px; height: 44px; border-radius: 12px; display: grid; place-items: center; background: var(--hall); }
+  .remote-title { font-weight: 700; font-size: 15px; }
+  .remote-room { font-size: 12px; color: var(--muted); }
+  .close { margin-left: auto; border: 0; background: transparent; color: var(--muted); font-size: 20px; cursor: pointer; }
+  .state { display: flex; justify-content: space-between; font-size: 13px; color: var(--ink2); margin-top: 12px; }
+  .state b { color: var(--ink); font-variant-numeric: tabular-nums; }
+  .power { width: 76px; height: 76px; border-radius: 50%; border: 0; cursor: pointer; display: grid; place-items: center;
+           margin: 6px auto 2px; background: var(--hall); color: var(--ink2); box-shadow: var(--shadow); transition: .15s; }
+  .power.on { background: var(--good); color: #fff; }
+  .power:disabled { cursor: not-allowed; opacity: .55; }
+  .power-label { text-align: center; font-size: 12px; color: var(--muted); }
+  .temp-ctl { display: flex; align-items: center; justify-content: space-between; }
+  .temp-ctl button, .levels button { border: 1px solid var(--line); background: var(--card); color: var(--ink);
+           border-radius: 12px; font: inherit; cursor: pointer; }
+  .temp-ctl button { width: 48px; height: 48px; font-size: 24px; }
+  .temp-ctl button:hover, .levels button:hover { border-color: var(--blue); }
+  .temp-val { font-size: 34px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .temp-val small { font-size: 16px; color: var(--muted); font-weight: 600; }
+  .levels { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .levels button { padding: 8px 0; font-size: 13px; }
+  .levels button.on { background: var(--blue); color: #fff; border-color: var(--blue); }
+  .badge { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 4px 9px; border-radius: 999px;
+           background: color-mix(in srgb, var(--orange) 14%, transparent); color: var(--orange); font-weight: 600; }
+  .link { border: 0; background: transparent; color: var(--blue); font: inherit; font-size: 12.5px; cursor: pointer; padding: 0; }
+  .danger { color: #d03b3b; }
+  .note { font-size: 12px; color: var(--muted); line-height: 1.55; }
+  .section-title { font-size: 12px; color: var(--muted); font-weight: 700; letter-spacing: .06em; margin-bottom: 8px; }
+  .legend { display: grid; gap: 7px; font-size: 13px; color: var(--ink2); }
+  .legend div { display: flex; align-items: center; gap: 8px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+  select, .add-btn { width: 100%; font: inherit; font-size: 13px; padding: 8px 10px; border-radius: 10px;
+           border: 1px solid var(--line); background: var(--card); color: var(--ink); }
+  .add-row { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px; }
+  .add-btn { background: var(--blue); color: #fff; border-color: var(--blue); cursor: pointer; font-weight: 600; }
+
+  .status { display: flex; flex-wrap: wrap; gap: 6px 22px; padding: 12px 16px; border-top: 1px solid var(--line);
+            background: var(--hall); font-size: 13px; color: var(--ink2); }
+  .status span { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .status b { color: var(--ink); font-variant-numeric: tabular-nums; }
+  .status svg { width: 15px; height: 15px; display: inline; }
+  .period { padding: 2px 8px; border-radius: 6px; font-size: 12px; font-weight: 700; color: #fff; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="toolbar">
+    <div><h2>智慧居家平面圖</h2><div class="sub" id="subtitle"></div></div>
+    <div class="seg">
+      <button id="mode-appliance" class="on">移動家電</button>
+      <button id="mode-room">調整格局</button>
+    </div>
+  </div>
+  <div class="main">
+    <div class="plan-wrap"><svg id="plan"></svg><div class="hint" id="hint"></div></div>
+    <aside class="panel" id="panel"></aside>
+  </div>
+  <div class="status" id="status"></div>
+</div>
+
+<script>
+// ---------- Streamlit 元件通訊協定（不需額外套件） ----------
+const Streamlit = {
+  send(type, extra) { window.parent.postMessage(Object.assign({ isStreamlitMessage: true, type }, extra), "*"); },
+  ready() { this.send("streamlit:componentReady", { apiVersion: 1 }); },
+  setValue(value) { this.send("streamlit:setComponentValue", { value, dataType: "json" }); },
+  setHeight(height) { this.send("streamlit:setFrameHeight", { height }); },
+};
+
+const ICONS = {
+  air_conditioner: '<rect x="2" y="5" width="20" height="8" rx="2"/><path d="M5 10h14"/><path d="M7 16c0 1.5-1 2-1 3.5M12 16c0 1.5-1 2-1 3.5M17 16c0 1.5-1 2-1 3.5"/>',
+  lighting: '<path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.5 10.9c.6.5 1 1.2 1 2V16h5v-.1c0-.8.4-1.5 1-2A6 6 0 0 0 12 3z"/>',
+  dehumidifier: '<rect x="5" y="3" width="14" height="18" rx="3"/><path d="M8 7h8"/><path d="M12 10.5c-1.6 2-2.4 3.3-2.4 4.4a2.4 2.4 0 0 0 4.8 0c0-1.1-.8-2.4-2.4-4.4z"/>',
+  refrigerator: '<rect x="6" y="2" width="12" height="20" rx="2"/><path d="M6 10h12M9 5v2.5M9 13v3"/>',
+};
+const TYPE_COLOR = { air_conditioner: "--blue", lighting: "--aqua", dehumidifier: "--aqua", refrigerator: "--yellow" };
+const COMFORT = { ok: ["--good", "舒適"], warm: ["--warm", "偏熱"], cool: ["--cool", "偏冷"] };
+const SMALL = {
+  calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  pin: '<path d="M12 21s7-6.1 7-11.5A7 7 0 0 0 5 9.5C5 14.9 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/>',
+  temp: '<path d="M10 14.5V5a2 2 0 1 1 4 0v9.5a4 4 0 1 1-4 0z"/>',
+  bolt: '<path d="M13 2 4 14h7l-1 8 9-12h-7l1-8z"/>',
+  coin: '<circle cx="12" cy="12" r="9"/><path d="M14.5 9.5c-.5-1-1.5-1.5-2.5-1.5-1.5 0-2.5.8-2.5 2s1 1.6 2.5 2 2.5.9 2.5 2-1 2-2.5 2c-1.1 0-2.1-.5-2.6-1.5M12 6.5v1.5M12 16v1.5"/>',
+  power: '<path d="M12 3v9"/><path d="M6.3 7.3a8 8 0 1 0 11.4 0"/>',
+};
+
+let data = null, mode = "appliance", selected = null, drag = null, lastSent = 0;
+const css = (v) => getComputedStyle(document.body).getPropertyValue(v).trim();
+const svgIcon = (body, size, color, sw = 1.8) =>
+  `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round">${body}</svg>`;
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+function send(event) {
+  event.nonce = Date.now() + Math.random();
+  Streamlit.setValue(event);
+}
+
+// ---------- 座標換算 ----------
+function geometry() {
+  const rooms = data.rooms;
+  const minX = Math.min(...rooms.map((r) => r.x)), minY = Math.min(...rooms.map((r) => r.y));
+  const maxX = Math.max(...rooms.map((r) => r.x + r.w)), maxY = Math.max(...rooms.map((r) => r.y + r.d));
+  const margin = 0.7;   // 公尺：留給指北針、比例尺
+  const width = document.querySelector(".plan-wrap").clientWidth || 700;
+  const scale = Math.min((width - 24) / (maxX - minX + 2 * margin), 640 / (maxY - minY + 2 * margin));
+  const ox = 12 + (width - 24 - (maxX - minX + 2 * margin) * scale) / 2 - (minX - margin) * scale;
+  const oy = 12 - (minY - margin) * scale;
+  return { minX, minY, maxX, maxY, scale, ox, oy, width,
+           height: (maxY - minY + 2 * margin) * scale + 24,
+           px: (x) => ox + x * scale, py: (y) => oy + y * scale,
+           mx: (px) => (px - ox) / scale, my: (py) => (py - oy) / scale };
+}
+
+// ---------- 繪製平面圖 ----------
+function drawPlan() {
+  const g = geometry(), s = g.scale, svg = document.getElementById("plan");
+  svg.setAttribute("height", g.height);
+  svg.setAttribute("viewBox", `0 0 ${g.width} ${g.height}`);
+  const wall = Math.max(3, 0.12 * s), outer = Math.max(5, 0.2 * s), grid = 0.5 * s;
+  let out = `<defs>
+    <pattern id="grid" width="${grid}" height="${grid}" patternUnits="userSpaceOnUse" x="${g.ox}" y="${g.oy}">
+      <path d="M ${grid} 0 L 0 0 0 ${grid}" fill="none" stroke="${css("--grid")}" stroke-width="1"/></pattern>
+    <pattern id="hatch" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <rect width="8" height="8" fill="${css("--hall")}"/><line x1="0" y1="0" x2="0" y2="8" stroke="${css("--hatch")}" stroke-width="2"/></pattern>
+    <filter id="shadow" x="-40%" y="-40%" width="180%" height="180%"><feDropShadow dx="0" dy="1.5" stdDeviation="2" flood-opacity=".18"/></filter>
+  </defs>
+  <rect width="100%" height="100%" fill="url(#grid)"/>
+  <rect x="${g.px(g.minX)}" y="${g.py(g.minY)}" width="${(g.maxX - g.minX) * s}" height="${(g.maxY - g.minY) * s}"
+        fill="url(#hatch)" stroke="${css("--wall")}" stroke-width="${outer}"/>`;
+
+  // 房間
+  for (const r of data.rooms) {
+    const x = g.px(r.x), y = g.py(r.y), w = r.w * s, d = r.d * s, cx = x + w / 2;
+    const fill = css(`--room-${r.template}`) || css("--room-other");
+    out += `<g class="room ${mode === "room" ? "editable" : ""}" data-id="${r.id}">
+      <rect x="${x}" y="${y}" width="${w}" height="${d}" fill="${fill}" stroke="${css("--wall")}" stroke-width="${wall}"/>`;
+    // 尺寸標註（建築圖慣例的箭頭端點）：下緣標寬度、左緣標深度；設備區與太小的房間不標
+    const showDims = r.template !== "utility" && w > 80 && d > 80;
+    if (showDims) {
+      const ty = y + d - 12, tick = 4;
+      out += `<line class="dim-line" x1="${x + 22}" y1="${ty}" x2="${x + w - 8}" y2="${ty}"/>
+        <line class="dim-line" x1="${x + 22}" y1="${ty - tick}" x2="${x + 22}" y2="${ty + tick}"/>
+        <line class="dim-line" x1="${x + w - 8}" y1="${ty - tick}" x2="${x + w - 8}" y2="${ty + tick}"/>
+        <rect x="${x + 15 + w / 2 - 24}" y="${ty - 7}" width="48" height="13" fill="${fill}"/>
+        <text class="dim" x="${x + 15 + w / 2}" y="${ty + 3.5}" text-anchor="middle">${r.w.toFixed(2)} m</text>`;
+      const tx = x + 12, cy = y + d / 2;
+      out += `<line class="dim-line" x1="${tx}" y1="${y + 8}" x2="${tx}" y2="${y + d - 20}"/>
+        <line class="dim-line" x1="${tx - tick}" y1="${y + 8}" x2="${tx + tick}" y2="${y + 8}"/>
+        <line class="dim-line" x1="${tx - tick}" y1="${y + d - 20}" x2="${tx + tick}" y2="${y + d - 20}"/>
+        <rect x="${tx - 7}" y="${cy - 30}" width="13" height="48" fill="${fill}"/>
+        <text class="dim" x="${tx}" y="${cy - 6}" text-anchor="middle" dominant-baseline="central"
+              transform="rotate(-90 ${tx} ${cy - 6})">${r.d.toFixed(2)} m</text>`;
+    }
+    // 房間名稱、面積、室溫（置中）
+    const ly = y + d / 2 - 8, small = w < 140;
+    out += `<text class="room-name" x="${cx}" y="${ly}" text-anchor="middle">${esc(r.name)}</text>`;
+    const area = r.area_m2 ? (small ? `${r.area_ping} 坪` : `${r.area_ping} 坪 · ${r.area_m2} m²`) : "設備區";
+    out += `<text class="room-area" x="${cx}" y="${ly + 16}" text-anchor="middle">${area}</text>`;
+    if (r.temp !== null && r.template !== "utility") {
+      const [colorVar, label] = COMFORT[r.comfort] || ["--off", "無人"];
+      const text = small ? `${r.temp.toFixed(1)}°C` : `${r.temp.toFixed(1)}°C ${label}`;
+      const cw = text.length * 6.6 + 16;
+      out += `<rect x="${cx - cw / 2}" y="${ly + 23}" width="${cw}" height="19" rx="9.5" fill="${css(colorVar)}"/>
+        <text class="chip-text" x="${cx}" y="${ly + 36.5}" text-anchor="middle">${text}</text>`;
+    }
+    out += `</g>`;
+  }
+
+  // 家電
+  for (const a of data.appliances) {
+    const x = g.px(a.x), y = g.py(a.y), on = a.on;
+    const color = on ? css(TYPE_COLOR[a.type]) : css("--off");
+    const isSel = selected === a.key;
+    // 運轉中才顯示功率標籤，關閉的家電只顯示灰色圖示，畫面比較乾淨
+    const label = `${a.watts} W`, lw = label.length * 6.4 + 12;
+    out += `<g class="appliance" data-key="${a.key}" transform="translate(${x},${y})">
+      <title>${esc(a.room)}・${esc(a.name)}：${on ? label : "關閉"}（今日 ${a.kwh_today.toFixed(2)} kWh）</title>
+      ${isSel ? `<rect x="-21" y="-21" width="42" height="42" rx="12" fill="none" stroke="${css("--blue")}" stroke-width="2.5"/>` : ""}
+      <rect x="-16" y="-16" width="32" height="32" rx="9" fill="${css("--card")}" stroke="${css("--line")}" filter="url(#shadow)"/>
+      <g transform="translate(-9.5,-9.5)">${svgIcon(ICONS[a.type], 19, color)}</g>
+      <circle cx="12" cy="-12" r="4" fill="${on ? css("--good") : css("--off")}" stroke="${css("--card")}" stroke-width="1.5"/>
+      ${a.manual ? `<circle cx="-12" cy="-12" r="4" fill="${css("--orange")}" stroke="${css("--card")}" stroke-width="1.5"/>` : ""}
+      ${on ? `<rect x="${-lw / 2}" y="19" width="${lw}" height="16" rx="8" fill="${css(TYPE_COLOR[a.type])}"/>
+      <text class="watt" x="0" y="31" text-anchor="middle" fill="#fff">${label}</text>` : ""}
+    </g>`;
+  }
+
+  // 指北針與比例尺
+  const nx = g.px(g.maxX) + 0.45 * s, ny = g.py(g.minY) + 10;
+  out += `<g transform="translate(${Math.min(nx, g.width - 18)},${ny})">
+      <path d="M0 -2 L7 18 L0 13 L-7 18 Z" fill="${css("--ink2")}"/><text x="0" y="32" class="dim" text-anchor="middle">N</text></g>`;
+  const sx = g.px(g.minX), sy = g.py(g.maxY) + 0.45 * s + 6;
+  out += `<g><line x1="${sx}" y1="${sy}" x2="${sx + 2 * s}" y2="${sy}" stroke="${css("--ink2")}" stroke-width="2"/>
+      ${[0, 1, 2].map((m) => `<line x1="${sx + m * s}" y1="${sy - 4}" x2="${sx + m * s}" y2="${sy + 4}" stroke="${css("--ink2")}" stroke-width="1.5"/>
+      <text class="dim" x="${sx + m * s}" y="${sy + 15}" text-anchor="middle">${m} m</text>`).join("")}</g>`;
+
+  svg.innerHTML = out;
+  document.getElementById("hint").textContent = mode === "room"
+    ? "拖曳房間調整格局（房間尺寸請在左側調整）"
+    : "拖曳圖示移動家電（可拖到其他房間），點一下開啟遙控器";
+  bindDrag(g);
+}
+
+// ---------- 拖曳 ----------
+function bindDrag(g) {
+  const svg = document.getElementById("plan");
+  const selector = mode === "room" ? ".room" : ".appliance";
+  svg.querySelectorAll(selector).forEach((el) => {
+    el.addEventListener("pointerdown", (e) => {
+      e.preventDefault();
+      el.setPointerCapture(e.pointerId);
+      const rect = svg.getBoundingClientRect(), k = g.width / rect.width;
+      drag = { el, k, rect, startX: e.clientX, startY: e.clientY, dx: 0, dy: 0, g };
+      if (mode === "room") el.parentNode.appendChild(el);   // 拖曳中的房間顯示在最上層
+    });
+    el.addEventListener("pointermove", (e) => {
+      if (!drag || drag.el !== el) return;
+      drag.dx = (e.clientX - drag.startX) * drag.k;
+      drag.dy = (e.clientY - drag.startY) * drag.k;
+      if (mode === "room") {
+        el.setAttribute("transform", `translate(${drag.dx},${drag.dy})`);
+        el.style.opacity = .85;
+      } else {
+        const a = data.appliances.find((x) => x.key === el.dataset.key);
+        el.setAttribute("transform", `translate(${g.px(a.x) + drag.dx},${g.py(a.y) + drag.dy})`);
+      }
+    });
+    el.addEventListener("pointerup", () => {
+      if (!drag || drag.el !== el) return;
+      const moved = Math.hypot(drag.dx, drag.dy) > 4;
+      const s = drag.g.scale;
+      if (mode === "room") {
+        const r = data.rooms.find((x) => x.id === el.dataset.id);
+        if (moved) send({ action: "move_room", id: r.id, x: r.x + drag.dx / s, y: r.y + drag.dy / s });
+      } else {
+        const a = data.appliances.find((x) => x.key === el.dataset.key);
+        if (moved) {
+          a.x += drag.dx / s; a.y += drag.dy / s;      // 先在畫面上更新，等 Python 回傳正式結果
+          send({ action: "move_appliance", key: a.key, x: a.x, y: a.y });
+        } else {
+          selected = selected === a.key ? null : a.key;
+        }
+      }
+      drag = null;
+      render();
+    });
+  });
+}
+
+// ---------- 右側面板：遙控器／說明 ----------
+function drawPanel() {
+  const panel = document.getElementById("panel");
+  const a = data.appliances.find((x) => x.key === selected);
+  if (!a) { panel.innerHTML = idlePanel(); bindIdle(); return; }
+  const st = data.status, color = a.on ? css(TYPE_COLOR[a.type]) : css("--off");
+  let controls = "";
+  if (a.type === "air_conditioner") {
+    controls = `<div class="card"><div class="section-title">設定溫度</div>
+      <div class="temp-ctl"><button data-cmd="temp_down">−</button>
+      <div class="temp-val">${(a.setpoint ?? 26).toFixed(1)}<small>°C</small></div>
+      <button data-cmd="temp_up">+</button></div>
+      <div class="state"><span>室溫</span><b>${a.room_temp !== null ? a.room_temp.toFixed(1) + "°C" : "—"}</b></div></div>`;
+  } else if (a.type === "lighting") {
+    const level = a.level ?? 1;
+    controls = `<div class="card"><div class="section-title">亮度</div><div class="levels">
+      ${[0.25, 0.5, 0.75, 1].map((v) => `<button data-cmd="level" data-value="${v}" class="${a.on && Math.abs(level - v) < .01 ? "on" : ""}">${v * 100}%</button>`).join("")}
+      </div></div>`;
+  } else if (a.type === "dehumidifier") {
+    controls = `<div class="card note">除濕機在室外濕度高、冷氣沒開時自動運轉。遙控開啟後會持續運轉到當天結束。</div>`;
+  }
+  panel.innerHTML = `
+    <div class="card">
+      <div class="remote-head">
+        <div class="remote-icon">${svgIcon(ICONS[a.type], 26, color)}</div>
+        <div><div class="remote-title">${esc(a.name)}</div><div class="remote-room">${esc(a.room)} · 額定 ${a.rated_w} W</div></div>
+        <button class="close" data-close>×</button>
+      </div>
+      <div class="state"><span>目前</span><b>${a.on ? `運轉中 · ${a.watts} W` : "關閉"}</b></div>
+      <div class="state"><span>今日累計</span><b>${a.kwh_today.toFixed(2)} kWh</b></div>
+      ${a.manual ? `<div style="margin-top:10px;display:flex;justify-content:space-between;align-items:center">
+        <span class="badge">● 手動控制（${String(a.manual_from).padStart(2, "0")}:00 起）</span>
+        <button class="link" data-cmd="auto">恢復自動</button></div>` : ""}
+    </div>
+    <div>
+      <button class="power ${a.on ? "on" : ""}" data-cmd="toggle" ${a.essential ? "disabled" : ""}>${svgIcon(SMALL.power, 30, "currentColor", 2.2)}</button>
+      <div class="power-label">${a.essential ? "冰箱為必要負載，維持運轉" : a.on ? "按下關閉" : "按下開啟"}</div>
+    </div>
+    ${controls}
+    <div class="note">遙控操作從 ${st.time} 起生效到當天結束，模擬會立即重算用電與室溫。
+      冷氣在沒人時遠端開啟，可模擬「下班前預冷」。</div>
+    <button class="link danger" data-remove>移除此家電</button>`;
+  panel.querySelector("[data-close]").onclick = () => { selected = null; render(); };
+  panel.querySelectorAll("[data-cmd]").forEach((b) => b.onclick = () =>
+    send({ action: "remote", key: a.key, command: b.dataset.cmd, value: b.dataset.value ? Number(b.dataset.value) : null }));
+  panel.querySelector("[data-remove]").onclick = () => { send({ action: "remove", key: a.key }); selected = null; };
+}
+
+function idlePanel() {
+  const types = Object.entries(data.addable);
+  const rooms = data.rooms.map((r) => `<option value="${r.id}">${esc(r.name)}</option>`).join("");
+  const on = data.appliances.filter((a) => a.on).length;
+  return `
+    <div class="card"><div class="section-title">新增家電</div>
+      <div class="add-row"><select id="add-type">${types.map(([k, v]) => `<option value="${k}">${v}</option>`).join("")}</select>
+      <select id="add-room">${rooms}</select></div>
+      <button class="add-btn" id="add-btn">＋ 加入平面圖</button></div>
+    <div class="card"><div class="section-title">圖例</div><div class="legend">
+      ${types.map(([k, v]) => `<div>${svgIcon(ICONS[k], 18, css(TYPE_COLOR[k]))}${v}</div>`).join("")}
+      <div><span class="dot" style="background:${css("--good")}"></span>運轉中　<span class="dot" style="background:${css("--off")}"></span>關閉</div>
+      <div><span class="dot" style="background:${css("--orange")}"></span>手動控制（遙控器）</div>
+      <div><span class="dot" style="background:${css("--good")}"></span>舒適 <span class="dot" style="background:${css("--warm")}"></span>偏熱 <span class="dot" style="background:${css("--cool")}"></span>偏冷</div>
+    </div></div>
+    <div class="note">目前 ${on} / ${data.appliances.length} 台家電運轉中。點選平面圖上的家電圖示開啟遙控器；
+      其他家電（電視、電腦、洗衣機等）依作息自動運轉，用電已計入下方全屋數據。</div>`;
+}
+
+function bindIdle() {
+  const btn = document.getElementById("add-btn");
+  if (btn) btn.onclick = () => send({ action: "add", type: document.getElementById("add-type").value,
+                                       room: document.getElementById("add-room").value });
+}
+
+// ---------- 狀態列 ----------
+function drawStatus() {
+  const s = data.status;
+  const periodColor = s.period === "尖峰" ? css("--orange") : s.period === "半尖峰" ? css("--yellow") : css("--aqua");
+  const icon = (k) => svgIcon(SMALL[k], 15, css("--ink2"), 2);
+  document.getElementById("status").innerHTML = `
+    <span>${icon("calendar")}<b>${s.date}</b>（${s.weekday}）</span>
+    <span>${icon("clock")}模擬時間 <b>${s.time}</b></span>
+    <span>${icon("pin")}${esc(s.location)}</span>
+    <span>${icon("temp")}室外 <b>${s.outdoor_temp.toFixed(1)}°C</b> · 濕度 <b>${s.rh.toFixed(0)}%</b></span>
+    <span>${icon("bolt")}全屋即時 <b>${s.house_kw.toFixed(2)} kW</b></span>
+    <span>${icon("coin")}<span class="period" style="background:${periodColor}">${s.period}</span> <b>${s.price.toFixed(2)}</b> 元/度</span>
+    <span>今日累計 <b>${s.today_kwh.toFixed(1)} kWh</b> · <b>${s.today_cost.toFixed(0)} 元</b></span>`;
+  document.getElementById("subtitle").textContent = `${s.mode}｜${data.rooms.length} 個空間、${data.appliances.length} 台可控家電`;
+}
+
+function render() {
+  if (!data) return;
+  if (selected && !data.appliances.some((a) => a.key === selected)) selected = null;
+  drawPlan(); drawPanel(); drawStatus();
+  Streamlit.setHeight(document.getElementById("app").scrollHeight + 2);
+}
+
+document.getElementById("mode-appliance").onclick = () => { mode = "appliance"; setMode(); };
+document.getElementById("mode-room").onclick = () => { mode = "room"; selected = null; setMode(); };
+function setMode() {
+  document.getElementById("mode-appliance").classList.toggle("on", mode === "appliance");
+  document.getElementById("mode-room").classList.toggle("on", mode === "room");
+  render();
+}
+
+window.addEventListener("message", (event) => {
+  if (event.data.type !== "streamlit:render") return;
+  data = event.data.args.data;
+  const theme = event.data.theme;
+  document.body.classList.toggle("dark", !!theme && theme.base === "dark");
+  render();
+});
+window.addEventListener("resize", () => render());
+Streamlit.ready();
+</script>
+</body>
+</html>

@@ -1,7 +1,10 @@
-# Streamlit 介面主題：主色與圖表的「冷氣／省電模式」藍色一致
-[theme]
+# Streamlit 介面主題：主色與圖表、平面圖的藍色一致。
+# 亮色、暗色分開設定，才能保留「跟隨系統」自動切換。
+[theme.light]
 primaryColor = "#2a78d6"
-font = "sans serif"
+
+[theme.dark]
+primaryColor = "#3987e5"
 
 [server]
 headless = true
