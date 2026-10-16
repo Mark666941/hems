@@ -1,4 +1,4 @@
-"""📊 分析：今日明細、模式比較、家電排程、室內環境、整月分析與建議、用電異常偵測。"""
+"""📊 分析：今日明細、模式比較、家電排程、室內環境、整月分析與建議、情境比較（What-if）與投資回收、用電異常偵測。"""
 from __future__ import annotations
 
 from pathlib import Path
@@ -6,8 +6,8 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-from ui import anomaly, charts, insights
-from ui.context import BASELINE, AppContext, analyze_month, meter_comparison
+from ui import anomaly, charts, insights, whatif
+from ui.context import BASELINE, AppContext, analyze_month, annual_scenario, meter_comparison
 from ui.theme import page_header, tips_card
 
 METER_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "meter"
@@ -16,7 +16,7 @@ METER_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "meter"
 def render(ctx: AppContext) -> None:
     page_header("ANALYSIS · 分析", "用電明細與模式比較", [(f"📅 <b>{ctx.day}</b> {ctx.weekday}", ""),
                                                    (f"🎛️ {ctx.mode_schedule.name}", "")])
-    tabs = st.tabs(["今日明細", "模式比較", "家電排程", "室內環境", "整月分析與建議", "異常偵測"])
+    tabs = st.tabs(["今日明細", "模式比較", "家電排程", "室內環境", "整月分析與建議", "情境比較", "異常偵測"])
     with tabs[0]:
         _today(ctx)
     with tabs[1]:
@@ -28,6 +28,8 @@ def render(ctx: AppContext) -> None:
     with tabs[4]:
         _month(ctx)
     with tabs[5]:
+        _whatif(ctx)
+    with tabs[6]:
         _anomaly(ctx)
 
 
@@ -124,6 +126,51 @@ def _climate(ctx: AppContext) -> None:
     c[2].metric("PMV 舒適比例", f"{m['PMV舒適比例(%)']:.0f}%", help="ISO 7730：|PMV| ≤ 0.5 的清醒人·時比例")
     c[3].metric("平均 PPD", f"{m['平均PPD(%)']:.1f}%", help="預測不滿意百分比，最低 5%")
     st.caption("以上舒適指標為全屋有冷氣空間的合計。冬季系統沒有暖氣，室溫主要受天氣影響。")
+
+
+def _whatif(ctx: AppContext) -> None:
+    st.caption("如果換設備或改習慣，一年能省多少電費？幾年回本？每個情境只改一個條件，"
+               f"和目前的家比較一整年（{ctx.tariff.plans[ctx.plan_id]['name']}、一般習慣）。")
+    available = [s for s in whatif.SCENARIOS if whatif.units(ctx.settings, s.id) > 0]
+    chosen = st.multiselect("情境", [s.id for s in available], default=[s.id for s in available],
+                            format_func=lambda i: whatif.SCENARIO_BY_ID[i].name, key="whatif_choice")
+    costs = {}
+    if chosen:
+        st.markdown("**投資金額**（可依實際報價修改）")
+        cols = st.columns(len(chosen))
+        for col, sid in zip(cols, chosen):
+            sc, n = whatif.SCENARIO_BY_ID[sid], whatif.units(ctx.settings, sid)
+            costs[sid] = col.number_input(f"{sc.name}（元）", 0.0, 10_000_000.0, float(sc.cost_per_unit * n), 1000.0,
+                                          key=f"whatif_cost_{sid}",
+                                          help=f"{sc.description} 預設 {sc.cost_per_unit:,.0f} 元 × {n} {sc.unit}；"
+                                               f"使用年限 {sc.lifetime_years} 年")
+    if st.button("執行情境試算", type="primary", disabled=not chosen):
+        st.session_state.whatif_request = (tuple(chosen), ctx.plan_id, ctx.key)
+    request = st.session_state.get("whatif_request")
+    if not (request and request[2] == ctx.key and request[1] == ctx.plan_id):
+        return
+    current = annual_scenario(ctx.key, "current", ctx.plan_id)
+    results = {sid: annual_scenario(ctx.key, sid, ctx.plan_id) for sid in request[0] if sid in costs}
+    table = whatif.payback_table(current, results, costs)
+    c = st.columns(3)
+    c[0].metric("目前年用電", f"{current['kwh'].sum():,.0f} 度")
+    c[1].metric("目前年電費", f"{current['bill'].sum():,.0f} 元")
+    if not table.empty:
+        best = table.iloc[0]
+        c[2].metric("最划算", best["情境"], f"使用年限內淨效益 {best['使用年限內淨效益(元)']:,.0f} 元")
+        st.altair_chart(charts.whatif_bars(table), width="stretch")
+        show = table.drop(columns=["id"]).assign(結論=[whatif.verdict(r) for _, r in table.iterrows()])
+        st.dataframe(show, hide_index=True, width="stretch", column_config={
+            "年用電(kWh)": st.column_config.NumberColumn(format="%.0f"),
+            "年電費(元)": st.column_config.NumberColumn(format="%.0f"),
+            "每年省電(kWh)": st.column_config.NumberColumn(format="%.0f"),
+            "每年省(元)": st.column_config.NumberColumn(format="%.0f"),
+            "投資(元)": st.column_config.NumberColumn(format="%.0f"),
+            "回收年限(年)": st.column_config.NumberColumn(format="%.1f"),
+            "使用年限內淨效益(元)": st.column_config.NumberColumn(format="%.0f")})
+    proxy = [str(m) for m in current.loc[current["proxy"], "month"]]
+    st.caption("一年以每月取樣推演估算；" + (f"{'、'.join(proxy)} 月尚無天氣資料，用最接近月份的天氣、該月電價計算。"
+                                         if proxy else "") + "電費依所選方案的月電費計算（含基本電費與累進級距）。")
 
 
 def _anomaly(ctx: AppContext) -> None:

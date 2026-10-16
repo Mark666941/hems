@@ -108,6 +108,19 @@ def temp_vs_ac(daily: pd.DataFrame) -> alt.LayerChart:
     return (points + lines).properties(height=300)
 
 
+def whatif_bars(table: pd.DataFrame) -> alt.Chart:
+    """情境比較：各情境每年省下的電費（長條），滑鼠提示投資金額與回收年限。"""
+    data = table[["情境", "每年省(元)", "投資(元)", "回收年限(年)", "使用年限內淨效益(元)"]].copy()
+    data["回收"] = data["回收年限(年)"].map(lambda y: "—" if pd.isna(y) else f"{y:.1f} 年")
+    return alt.Chart(data).mark_bar(cornerRadiusEnd=4, color="#1baf7a").encode(
+        y=alt.Y("情境:N", sort="-x", title=None),
+        x=alt.X("每年省(元):Q", title="每年省下的電費（元）"),
+        tooltip=["情境:N", alt.Tooltip("每年省(元):Q", format=",.0f"), alt.Tooltip("投資(元):Q", format=",.0f"),
+                 alt.Tooltip("回收:N", title="回收年限"),
+                 alt.Tooltip("使用年限內淨效益(元):Q", format=",.0f")],
+    ).properties(height=max(120, 46 * len(data)))
+
+
 def anomaly_chart(scored: pd.DataFrame, k: float) -> alt.LayerChart:
     """異常偵測：一個通道逐時「實測 − 模擬」的誤差；灰帶為正常範圍（中位數 ± kσ），紅點為異常。"""
     data = scored[["date", "hour", "measured_kwh", "simulated_kwh", "residual", "center", "scale", "z"]].copy()

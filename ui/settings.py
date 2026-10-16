@@ -62,11 +62,12 @@ def build_house(settings: dict) -> House:
     return house
 
 
-def build_analyzer(settings: dict) -> Analyzer:
-    """依設定組裝：房屋 → 作息 → 負載模型 → 推演引擎 → 最佳化 → 分析。設定錯誤會丟出 ValueError。"""
+def build_analyzer(settings: dict, params: dict | None = None) -> Analyzer:
+    """依設定組裝：房屋 → 作息 → 負載模型 → 推演引擎 → 最佳化 → 分析。設定錯誤會丟出 ValueError。
+    params：負載模型參數（預設讀 config/load_params.json；情境比較用來換冷氣 COP、熱水器效率）。"""
     house = build_house(settings)
     schedule = Schedule(house, config=settings["schedule"])
-    load_model = LoadModel(house, schedule, load_params())
+    load_model = LoadModel(house, schedule, params or load_params())
     simulator = Simulator(house, schedule, load_model)
     baseline = ControlPlan(name="基準（一般習慣）", default_setpoint=float(settings["baseline_setpoint_c"]))
     optimizer = Optimizer(simulator, modes_config=settings["modes"], baseline=baseline)

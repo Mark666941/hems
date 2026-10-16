@@ -18,7 +18,7 @@ from core.data_source import CsvMeterSource, CwaCsvWeatherSource
 from core.metrics import Analyzer, compare_with_meter
 from core.optimizer import ModeSchedule
 from core.simulator import ControlPlan, SimulatedMeterSource, SimulationResult
-from ui import insights, usage
+from ui import insights, usage, whatif
 from ui.floorplan import apply_remote
 from ui.settings import build_analyzer
 
@@ -85,6 +85,13 @@ def month_bills(_analyzer: Analyzer, settings_key: str, year: int, month: int) -
 @st.cache_data
 def available_dates() -> list[date]:
     return CwaCsvWeatherSource().available_dates()
+
+
+@st.cache_data(max_entries=16, show_spinner="推演一整年（每個情境約 3 秒）…")
+def annual_scenario(settings_key: str, scenario_id: str, plan_id: str) -> pd.DataFrame:
+    """情境比較：某個情境（或目前 current）的全年逐月用電與電費。"""
+    settings, params = whatif.apply_scenario(json.loads(settings_key), whatif.default_params(), scenario_id)
+    return whatif.annual(settings, params, plan_id, set(available_dates()))
 
 
 @st.cache_data(max_entries=4, show_spinner="比對實測與模擬…")

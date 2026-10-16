@@ -56,15 +56,15 @@ def describe_habit(habit: dict) -> str:
 # ---------- 物理模擬：每月概況 ----------
 
 def simulate_month(analyzer: Analyzer, year: int, month: int, plan_id: str,
-                   available: set[date]) -> dict:
-    """推演某月有天氣資料的每一天（一般習慣），整理成可快取的概況。
+                   available: set[date], step: int = 1) -> dict:
+    """推演某月有天氣資料的每一天（一般習慣），整理成可快取的概況。step > 1 時每隔 step 天取樣一天（較快）。
 
     回傳 {"by_date": {日期: {"kwh", "cost"}}, "mean": {日別: {"kwh", "cost"}},
           "appliance": {日別: {"空間id/家電id": kWh}}, "hourly": {日別: [24 小時平均 kWh]}}
     """
     by_date, rows, appl, hourly = {}, [], [], []
     plan = analyzer.opt.baseline_plan
-    for d in range(1, calendar.monthrange(year, month)[1] + 1):
+    for d in range(1, calendar.monthrange(year, month)[1] + 1, step):
         day = date(year, month, d)
         if day not in available:
             continue
