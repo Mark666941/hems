@@ -20,6 +20,7 @@ from core.data_source import load_representative_days
 from core.models import load_space_templates
 from core.optimizer import MODE_ORDER, ModeSchedule
 from ui import charts
+from ui.account import account_dialog, autosave, ensure_session
 from ui.context import (WEEKDAY_NAMES, AppContext, available_dates, get_analyzer, month_bills, run_schedule,
                         run_with_remote, update_settings)
 from ui.floorplan import ensure_layout, room_dims, set_room_size
@@ -32,18 +33,16 @@ apply_theme()
 
 # ---------- 狀態 ----------
 
-if "settings" not in st.session_state:
-    st.session_state.settings = default_settings()
-settings: dict = st.session_state.settings
-
 dates = available_dates()
 rep = load_representative_days()
-if "ui" not in st.session_state:
-    st.session_state.ui = {
-        "preset": "夏季代表日", "custom_day": rep["summer"], "hour": datetime.now().hour, "plan_id": "tou_2",
-        "schedule_type": "single", "mode": "normal", "day_mode": "normal", "night_mode": "sleep",
-        "day_start": 7, "day_end": 23,
-    }
+DEFAULT_UI = {
+    "preset": "夏季代表日", "custom_day": rep["summer"], "hour": datetime.now().hour, "plan_id": "tou_2",
+    "schedule_type": "single", "mode": "normal", "day_mode": "normal", "night_mode": "sleep",
+    "day_start": 7, "day_end": 23,
+}
+# 登入並載入最後使用的設定檔（桌面版自動以本機使用者登入）；之後每次修改都會自動存檔
+store = ensure_session(DEFAULT_UI)
+settings: dict = st.session_state.settings
 ui: dict = st.session_state.ui
 
 try:
@@ -207,6 +206,8 @@ cooling = settings["modes"]["comfort"]["seasons"]["cooling"]
 with st.sidebar:
     st.markdown("### ⚡ HEMS 控制台")
     st.caption("點選項目開啟設定")
+    menu_item("👤 帳號與設定檔", f"{st.session_state.profile_name}・自動存檔", lambda: account_dialog(DEFAULT_UI),
+              "account")
     menu_item("📅 日期與時間", f"{day}（週{WEEKDAY_NAMES[day.weekday()]}・{day_type}）{sim_hour:02d}:00",
               dialog_datetime, "datetime")
     c1, c2, c3 = st.columns([1, 1, 1])
@@ -253,3 +254,4 @@ start = st.session_state.get("_test_page", "home")   # 預設首頁；自動測�
 ctx.pages = {name: st.Page(lambda m=module: m.render(ctx), title=title, icon=icon, url_path=name, default=name == start)
              for name, module, title, icon in PAGES}
 st.navigation(list(ctx.pages.values()), position="top").run()
+autosave(store)   # 這次執行中若有修改設定或介面選項，寫回資料庫

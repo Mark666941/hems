@@ -34,6 +34,7 @@ hems/
 ├── config/            # 標配房型、模式參數、電價設定（JSON）
 ├── data/weather/      # 中央氣象署逐時觀測 CSV（2026 年 1–9 月）
 ├── data/meter/        # 智慧插座／電表 CSV（目前只有示範用合成資料）
+├── data/user/         # 本機使用者資料庫 hems.db（不進 git）
 ├── scripts/           # 天氣下載、示範電表資料產生
 ├── core/
 │   ├── models.py      # 資料結構：空間、家電、房屋、使用者、模式
@@ -44,12 +45,13 @@ hems/
 │   ├── simulator.py   # 24 小時推演引擎（ControlPlan → SimulationResult）
 │   ├── charts.py      # 靜態圖表（matplotlib）
 │   ├── optimizer.py   # 四種模式的最佳化（modes.json 參數 → ControlPlan）
-│   └── metrics.py     # 指標計算（含 PMV/PPD）、模式比較、節省建議、報告
+│   ├── metrics.py     # 指標計算（含 PMV/PPD）、模式比較、節省建議、報告
+│   └── storage.py     # 資料層：帳號與設定檔（SQLAlchemy：桌面 SQLite、網頁 PostgreSQL）
 ├── app.py             # Streamlit 入口：主題、左側設定選單、頂端導覽（streamlit run app.py）
 ├── run_app.py         # 一鍵啟動：桌面視窗（pywebview）或瀏覽器；VS Code 按 F5、雙擊 start_hems.bat 或桌面捷徑
 ├── assets/            # 程式圖示（scripts/make_icon.py 產生）；桌面捷徑由 scripts/create_shortcut.py 建立
 ├── .vscode/           # VS Code 啟動設定（F5）與虛擬環境設定
-├── ui/                # 介面：settings.py（設定 ↔ 核心模組）、context.py（各頁共用資料與快取）、
+├── ui/                # 介面：settings.py（設定 ↔ 核心模組）、context.py（各頁共用資料與快取）、account.py（登入、設定檔、自動存檔）、
 │                      #   theme.py（科技感樣式、KPI 卡、比較條）、charts.py（Altair 互動圖表）、
 │                      #   floorplan.py + floorplan_frontend/（智慧平面圖自訂元件：拖曳家電、遙控器）、
 │                      #   pages/（home 首頁、plan 平面圖、analysis 分析、forecast 預測、settings 設定、about 說明）
@@ -125,7 +127,7 @@ hems/
 - [x] 第 1 批：左側改為功能選單（點選開啟設定視窗）、電價方案說明與試算、舒適溫度下限 16°C
 - [x] 第 2 批：多頁面架構（首頁／平面圖／分析／預測／設定／說明）、科技感視覺（深色、留白、層次）、
       首頁只放「家中此刻」（即時用電、今日用電與電費、在家人數、今日用電曲線、今日建議），總覽細節收合、比較圖改版
-- [ ] 第 3 批（進行中，白天工作負責）：SQLite 儲存使用者設定（自動存檔、多組設定檔、匯出／匯入）
+- [x] 第 3 批：資料庫儲存（SQLite／PostgreSQL、帳號登入、自動存檔、多組設定檔、匯出／匯入）
 - [ ] 第 4 批（進行中，白天工作負責）：平面圖顯示家庭成員人物（依作息移動、點選看作息、拖曳＝臨時變動）
 - [ ] 第 5 批（依賴第 3 批的資料庫，第 3 批完成後才能做）：家電使用紀錄（每週習慣、每日紀錄、帳單度數）＋獨立預測頁（本月／下月用電與電費）
 - [ ] 第 6a 批：整月分析改折線圖（各模式每日用電、累積電費、室外溫度與冷氣用電關係）與數據分析式建議
