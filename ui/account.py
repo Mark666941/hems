@@ -14,9 +14,13 @@ import os
 from datetime import date
 
 import streamlit as st
+from sqlalchemy.exc import SQLAlchemyError
 
 from core.storage import Store, export_profile, parse_export
+from ui.logs import get_logger
 from ui.settings import build_analyzer, default_settings
+
+log = get_logger("account")
 
 
 @st.cache_resource(show_spinner=False)
@@ -70,6 +74,7 @@ def migrate(settings: dict) -> dict:
 
 def _activate(store: Store, user_id: int, profile_id: int, default_ui: dict) -> None:
     profile = store.load_profile(user_id, profile_id)
+    log.info("載入設定檔：使用者 %s、設定檔 %s「%s」", user_id, profile.id, profile.name)
     profile.settings = migrate(profile.settings)
     st.session_state.update(
         user_id=user_id, profile_id=profile.id, profile_name=profile.name,
@@ -108,8 +113,10 @@ def _login_screen(store: Store) -> None:
             if st.form_submit_button("登入", type="primary", width="stretch"):
                 user_id = store.login(username, password)
                 if user_id is None:
+                    log.warning("登入失敗：%s", username.strip())      # 不記錄密碼
                     st.error("帳號或密碼錯誤")
                 else:
+                    log.info("登入：%s", username.strip())
                     st.session_state.user_id = user_id
                     st.rerun()
         with tab_register, st.form("register"):
@@ -122,6 +129,7 @@ def _login_screen(store: Store) -> None:
                 else:
                     try:
                         st.session_state.user_id = store.register(username, password)
+                        log.info("註冊新帳號：%s", username.strip())
                         st.rerun()
                     except ValueError as e:
                         st.error(str(e))
@@ -137,8 +145,14 @@ def autosave(store: Store) -> bool:
     snapshot = _snapshot()
     if snapshot == st.session_state.get("saved_snapshot"):
         return False
-    store.save_profile(st.session_state.user_id, st.session_state.profile_id,
-                       st.session_state.settings, ui_to_json(st.session_state.ui))
+    try:
+        store.save_profile(st.session_state.user_id, st.session_state.profile_id,
+                           st.session_state.settings, ui_to_json(st.session_state.ui))
+    except (SQLAlchemyError, KeyError, OSError) as e:
+        # 資料庫暫時無法寫入（例如網路斷線）：記錄並提示，下次執行會再試一次（saved_snapshot 沒更新）
+        log.exception("自動存檔失敗（設定檔 %s）", st.session_state.profile_id)
+        st.toast(f"自動存檔失敗，稍後會再試一次：{e}", icon="⚠️")
+        return False
     st.session_state.saved_snapshot = snapshot
     return True
 
@@ -181,6 +195,7 @@ def account_dialog(default_ui: dict) -> None:
     if st.button("🗑️ 刪除這個設定檔", disabled=len(profiles) <= 1 or choice == current,
                  help="不能刪除使用中的設定檔，也至少要保留一個"):
         store.delete_profile(user_id, choice)
+        log.info("刪除設定檔：使用者 %s、設定檔 %s", user_id, choice)
         st.rerun()
 
     st.divider()
@@ -208,6 +223,7 @@ def account_dialog(default_ui: dict) -> None:
             name, settings, ui = parse_export(uploaded.getvalue().decode("utf-8"))
             error = _valid(settings)
             if error:
+                log.warning("匯入失敗（設定內容有誤）：%s", error)
                 st.error(f"設定內容有誤，無法匯入：{error}")
             elif st.button(f"匯入為新設定檔「{name}」", type="primary"):
                 profile_id = store.create_profile(user_id, name, settings, ui)

@@ -33,6 +33,7 @@ from ui.context import (
 )
 from ui.family import apply_person_overrides
 from ui.floorplan import ensure_layout, room_dims, set_room_size
+from ui.logs import get_logger, guarded
 from ui.pages import about, analysis, forecast, home, plan, settings as settings_page
 from ui.settings import default_settings, sim_key
 from ui.theme import apply_theme
@@ -59,6 +60,7 @@ ui: dict = st.session_state.ui
 try:
     analyzer = get_analyzer(sim_key(settings))
 except (ValueError, KeyError) as e:
+    get_logger("app").warning("設定有誤（設定檔 %s）：%s", st.session_state.get("profile_id"), e)
     st.error(f"設定有誤：{e}")
     if st.button("恢復預設設定"):
         update_settings(default_settings())
@@ -277,7 +279,9 @@ PAGES = [("home", home, "首頁", ":material/home:"), ("plan", plan, "平面圖"
          ("analysis", analysis, "分析", ":material/monitoring:"), ("forecast", forecast, "預測", ":material/trending_up:"),
          ("settings", settings_page, "設定", ":material/tune:"), ("about", about, "說明", ":material/info:")]
 start = st.session_state.get("_test_page", "home")   # 預設首頁；自動測試可指定其他頁
-ctx.pages = {name: st.Page(lambda m=module: m.render(ctx), title=title, icon=icon, url_path=name, default=name == start)
+# 每個頁面包在 guarded() 裡：頁面出錯時記錄並顯示錯誤訊息，左側選單與其他頁面照常可用
+ctx.pages = {name: st.Page(lambda m=module, t=title: guarded(f"{t}頁", lambda: m.render(ctx)), title=title, icon=icon,
+                           url_path=name, default=name == start)
              for name, module, title, icon in PAGES}
 st.navigation(list(ctx.pages.values()), position="top").run()
 autosave(store)   # 這次執行中若有修改設定或介面選項，寫回資料庫

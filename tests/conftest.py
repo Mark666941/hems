@@ -5,3 +5,4 @@ from pathlib import Path
 
 _TMP = Path(tempfile.mkdtemp(prefix="hems_test_"))
 os.environ["HEMS_DATABASE_URL"] = f"sqlite:///{(_TMP / 'test.db').as_posix()}"
+os.environ["HEMS_LOG_DIR"] = str(_TMP / "logs")      # 錯誤記錄也寫到暫存資料夾

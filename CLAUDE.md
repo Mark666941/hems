@@ -54,10 +54,11 @@ hems/
 ├── .vscode/           # VS Code 啟動設定（F5）與虛擬環境設定
 ├── .github/workflows/ # GitHub Actions：push 時自動執行 ruff 與 pytest（ruff 設定在 ruff.toml）
 ├── ui/                # 介面：settings.py（設定 ↔ 核心模組）、context.py（各頁共用資料與快取）、account.py（登入、設定檔、自動存檔）、
-│                      #   theme.py（科技感樣式、KPI 卡、比較條）、charts.py（Altair 互動圖表）、family.py（家庭成員）、usage.py（使用紀錄與預測計算）、insights.py（整月每日資料與數據分析建議）、wizard.py（新手引導精靈）、anomaly.py（用電異常偵測）、whatif.py（情境比較與投資回收）、pdf_report.py（PDF 報告）、
+│                      #   theme.py（科技感樣式、KPI 卡、比較條）、charts.py（Altair 互動圖表）、family.py（家庭成員）、usage.py（使用紀錄與預測計算）、insights.py（整月每日資料與數據分析建議）、wizard.py（新手引導精靈）、anomaly.py（用電異常偵測）、whatif.py（情境比較與投資回收）、pdf_report.py（PDF 報告）、logs.py（錯誤處理與記錄）、
 │                      #   floorplan.py + floorplan_frontend/（智慧平面圖自訂元件：拖曳家電、遙控器）、
 │                      #   pages/（home 首頁、plan 平面圖、analysis 分析、forecast 預測、settings 設定、about 說明）
 ├── .streamlit/        # Streamlit 主題設定
+├── docs/developer_guide.md # 程式文件：執行流程、模組地圖、常見修改、錯誤記錄、測試
 ├── docs/images/       # 里程碑圖表（README 用）
 ├── docs/reports/      # 整月分析報告範例（Markdown）
 ├── output/            # 推演輸出 CSV、PNG（不進 git）
@@ -153,7 +154,7 @@ hems/
 - [ ] 12. B3 最佳化升級（PuLP 混合整數規劃／MPC，與現行方法比較）（白天工作負責：改 core）
 - [x] 13. C3 手機版排版（夜間）
 - [x] 14. C5 報告匯出 PDF（用 matplotlib 內建 PDF 輸出，不裝新套件）（夜間）
-- [ ] 15. D4 錯誤處理與記錄、D5 程式文件（夜間）
+- [x] 15. D4 錯誤處理與記錄、D5 程式文件（夜間）
 - [ ] 16. E2 示範帳號與示範資料（夜間）
 - [ ] 17. A2 房間之間的熱交換（RC 熱網路）（白天工作負責：改 core）
 - [ ] 18. E3 Windows 安裝程式（PyInstaller）（白天工作負責：需安裝套件）
