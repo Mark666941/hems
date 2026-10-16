@@ -121,6 +121,17 @@
   input[type=time], input[type=text] { font: inherit; font-size: 13px; padding: 7px 9px; border-radius: 10px;
     border: 1px solid var(--line); background: var(--card); color: var(--ink); width: 100%; }
   .period { padding: 2px 8px; border-radius: 6px; font-size: 12px; font-weight: 700; color: #fff; }
+  /* 一天動畫播放 */
+  .player { display: flex; align-items: center; gap: 8px; padding: 8px 16px; border-bottom: 1px solid var(--line);
+            font-size: 13px; color: var(--ink2); flex-wrap: wrap; }
+  .player button, .player select { font: inherit; font-size: 13px; border-radius: 9px; border: 1px solid var(--line);
+            background: var(--card); color: var(--ink); padding: 5px 11px; cursor: pointer; }
+  .player button.primary { background: var(--blue); border-color: var(--blue); color: #fff; font-weight: 600; }
+  .player input[type=range] { flex: 1; min-width: 140px; accent-color: var(--blue); }
+  .player .frame-time { font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; min-width: 46px; }
+  .player .playing-badge { color: var(--orange); font-weight: 600; font-size: 12px; }
+  body.compact .player { display: none; }
+  body.playback .appliance, body.playback .person, body.playback .room { cursor: default; }
 </style>
 </head>
 <body>
@@ -131,6 +142,16 @@
       <button id="mode-appliance" class="on">移動家電</button>
       <button id="mode-room">調整格局</button>
     </div>
+  </div>
+  <div class="player" id="player">
+    <button id="play" class="primary">▶ 播放一天</button>
+    <input type="range" id="scrub" min="0" max="23" step="1" value="0" aria-label="播放時間">
+    <span class="frame-time" id="frame-time">--:--</span>
+    <select id="speed" aria-label="播放速度">
+      <option value="900">慢</option><option value="500" selected>中</option><option value="220">快</option>
+    </select>
+    <button id="back-live" style="display:none">回到模擬時間</button>
+    <span class="playing-badge" id="playing-badge"></span>
   </div>
   <div class="main">
     <div class="plan-wrap"><svg id="plan"></svg><div class="hint" id="hint"></div></div>
@@ -171,6 +192,8 @@ const ACT_COLOR = { sleep: "#6366f1", out: "#94a3b8", meal: "#f59e0b", cook: "#f
 const ACT_LEGEND = [["sleep", "睡覺"], ["out", "外出"], ["meal", "用餐／煮飯"], ["wash", "盥洗／洗澡"],
                     ["leisure", "休閒"], ["study", "讀書"]];
 let data = null, mode = "appliance", selected = null, drag = null, lastSent = 0;
+// 一天動畫播放：live 為 Python 送來的資料（模擬時間那一小時）；frame 不是 null 時顯示該小時的畫格（唯讀）
+let live = null, frame = null, timer = null;
 const css = (v) => getComputedStyle(document.body).getPropertyValue(v).trim();
 const svgIcon = (body, size, color, sw = 1.8) =>
   `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="${sw}" stroke-linecap="round" stroke-linejoin="round">${body}</svg>`;
@@ -295,6 +318,10 @@ function drawPlan() {
 
   svg.innerHTML = out;
   if (data.compact) return;
+  if (frame !== null) {          // 播放中：唯讀，不綁定拖曳
+    document.getElementById("hint").textContent = "播放中：顯示已算好的逐時結果，按「回到模擬時間」恢復拖曳與遙控";
+    return;
+  }
   document.getElementById("hint").textContent = mode === "room"
     ? "拖曳房間調整格局（房間尺寸請在左側調整）"
     : "拖曳圖示移動家電（可拖到其他房間），點一下開啟遙控器";
@@ -374,6 +401,7 @@ function bindDrag(g) {
 // ---------- 右側面板：遙控器／說明 ----------
 function drawPanel() {
   const panel = document.getElementById("panel");
+  if (frame !== null) { panel.innerHTML = playbackPanel(); return; }
   if (selected && selected.startsWith("person:")) {
     const p = (data.people || []).find((x) => "person:" + x.id === selected);
     if (p) { panel.innerHTML = personPanel(p); bindPerson(p); return; }
@@ -422,6 +450,88 @@ function drawPanel() {
     send({ action: "remote", key: a.key, command: b.dataset.cmd, value: b.dataset.value ? Number(b.dataset.value) : null }));
   panel.querySelector("[data-remove]").onclick = () => { send({ action: "remove", key: a.key }); selected = null; };
 }
+
+// ---------- 一天動畫播放 ----------
+function applyFrame(base, f) {
+  return Object.assign({}, base, {
+    rooms: base.rooms.map((r) => Object.assign({}, r, f.rooms[r.id] || {})),
+    appliances: base.appliances.map((a) => Object.assign({}, a, f.appliances[a.key] || {})),
+    people: f.people, status: f.status,
+  });
+}
+
+function playbackPanel() {
+  const frames = live.frames, s = data.status;
+  const maxKw = Math.max(...frames.map((f) => f.status.house_kw), 0.1);
+  const bars = frames.map((f) => {
+    const h = Math.max(2, (f.status.house_kw / maxKw) * 54);
+    const color = f.hour === frame ? css("--blue") : f.status.period === "尖峰" ? css("--orange")
+      : f.status.period === "半尖峰" ? css("--yellow") : css("--off");
+    return `<span title="${String(f.hour).padStart(2, "0")}:00 ${f.status.house_kw.toFixed(2)} kW"
+      style="height:${h}px;background:${color};align-self:end;border-radius:2px"></span>`;
+  }).join("");
+  const running = data.appliances.filter((a) => a.on).sort((a, b) => b.watts - a.watts).slice(0, 5);
+  const home = (data.people || []).filter((p) => p.room);
+  return `
+    <div class="card"><div class="section-title">播放中・${s.time}</div>
+      <div class="state" style="margin-top:0"><span>全屋用電</span><b>${s.house_kw.toFixed(2)} kW</b></div>
+      <div class="state"><span>室外</span><b>${s.outdoor_temp.toFixed(1)}°C · ${s.rh.toFixed(0)}%</b></div>
+      <div class="state"><span>電價</span><b>${s.period} ${s.price.toFixed(2)} 元/度</b></div>
+      <div class="state"><span>至 ${s.time} 累計</span><b>${s.today_kwh.toFixed(1)} kWh · ${s.today_cost.toFixed(0)} 元</b></div>
+    </div>
+    <div class="card"><div class="section-title">一天的用電（橘＝尖峰、藍＝目前）</div>
+      <div class="tl" style="height:56px;align-items:end">${bars}</div>
+      <div class="tl-axis"><span>0</span><span>6</span><span>12</span><span>18</span><span>24</span></div></div>
+    <div class="card"><div class="section-title">在家 ${home.length} 人</div>
+      ${home.map((p) => `<div class="member-row" style="cursor:default"><span class="avatar sm" style="background:${p.color}">${esc(p.initial)}</span>
+        <span>${esc(p.name)}<small>${esc(p.room_name)}・${p.icon} ${esc(p.activity_label)}</small></span></div>`).join("")
+        || '<div class="note">全家外出中</div>'}</div>
+    <div class="card"><div class="section-title">運轉中的家電</div>
+      ${running.map((a) => `<div class="state" style="margin-top:4px"><span>${esc(a.room)}・${esc(a.name)}</span><b>${a.watts} W</b></div>`).join("")
+        || '<div class="note">沒有可控家電在運轉</div>'}</div>`;
+}
+
+function setFrame(h) {
+  frame = h;
+  render();
+}
+
+function stopTimer() {
+  if (timer) clearInterval(timer);
+  timer = null;
+}
+
+function play() {
+  if (!live || !live.frames) return;
+  if (timer) { stopTimer(); render(); return; }               // 暫停
+  if (frame === null || frame >= 23) frame = 0;
+  selected = null;
+  const step = () => {
+    if (frame >= 23) { stopTimer(); render(); return; }       // 播到 23 時停住，畫面保留
+    setFrame(frame + 1);
+  };
+  timer = setInterval(step, Number(document.getElementById("speed").value));
+  render();
+}
+
+function drawPlayer() {
+  const has = !!(live && live.frames);
+  document.getElementById("player").style.display = has && !live.compact ? "flex" : "none";
+  if (!has) return;
+  const liveHour = Number(live.status.time.slice(0, 2));
+  document.getElementById("scrub").value = frame === null ? liveHour : frame;
+  document.getElementById("frame-time").textContent = data.status.time;
+  document.getElementById("play").textContent = timer ? "⏸ 暫停" : "▶ 播放一天";
+  document.getElementById("back-live").style.display = frame === null ? "none" : "";
+  document.getElementById("back-live").textContent = `回到模擬時間 ${live.status.time}`;
+  document.getElementById("playing-badge").textContent = frame === null ? "" : "唯讀播放（不重算）";
+  document.body.classList.toggle("playback", frame !== null);
+}
+
+document.getElementById("play").onclick = play;
+document.getElementById("scrub").oninput = (e) => { stopTimer(); selected = null; setFrame(Number(e.target.value)); };
+document.getElementById("speed").onchange = () => { if (timer) { stopTimer(); play(); } };
+document.getElementById("back-live").onclick = () => { stopTimer(); frame = null; render(); };
 
 function personPanel(p) {
   const h = Number(data.status.time.slice(0, 2)), t = p.times;
@@ -524,12 +634,14 @@ function drawStatus() {
     <span>👥 在家 <b>${(data.people || []).filter((p) => p.room).length}</b> 人</span>
     <span>${icon("bolt")}全屋即時 <b>${s.house_kw.toFixed(2)} kW</b></span>
     <span>${icon("coin")}<span class="period" style="background:${periodColor}">${s.period}</span> <b>${s.price.toFixed(2)}</b> 元/度</span>
-    <span>今日累計 <b>${s.today_kwh.toFixed(1)} kWh</b> · <b>${s.today_cost.toFixed(0)} 元</b></span>`;
+    <span>${frame !== null ? `至 ${s.time} 累計` : "今日累計"} <b>${s.today_kwh.toFixed(1)} kWh</b> · <b>${s.today_cost.toFixed(0)} 元</b></span>`;
   document.getElementById("subtitle").textContent = `${s.mode}｜${data.rooms.length} 個空間、${data.appliances.length} 台可控家電`;
 }
 
 function render() {
-  if (!data) return;
+  if (!live) return;
+  if (frame !== null && !(live.frames && live.frames[frame])) frame = null;
+  data = frame === null ? live : applyFrame(live, live.frames[frame]);
   // 選取的家電或人物已不存在（例如被刪除）就取消選取
   const exists = selected && (selected.startsWith("person:")
     ? (data.people || []).some((p) => "person:" + p.id === selected)
@@ -537,6 +649,7 @@ function render() {
   if (!exists) selected = null;
   document.body.classList.toggle("compact", !!data.compact);
   drawPlan();
+  drawPlayer();
   if (!data.compact) { drawPanel(); drawStatus(); }
   Streamlit.setHeight(document.getElementById("app").scrollHeight + 2);
 }
@@ -551,7 +664,7 @@ function setMode() {
 
 window.addEventListener("message", (event) => {
   if (event.data.type !== "streamlit:render") return;
-  data = event.data.args.data;
+  live = event.data.args.data;
   const theme = event.data.theme;
   document.body.classList.toggle("dark", !!theme && theme.base === "dark");
   render();

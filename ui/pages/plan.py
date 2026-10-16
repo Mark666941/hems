@@ -20,21 +20,50 @@ from ui.floorplan import (
 from ui.theme import page_header
 
 
-def make_payload(ctx: AppContext) -> dict:
-    """平面圖元件需要的資料（首頁的精簡版也用這一份）。"""
-    r, h = ctx.selected, ctx.hour
+def _status(ctx: AppContext, h: int, cumulative: bool = False) -> dict:
+    """狀態列資料。cumulative=True（動畫播放的每一格）時，今日用電與電費為 0 時到該小時的累計。"""
+    r = ctx.selected
     hourly = r.hourly.set_index("hour")
-    status = {
+    upto = hourly.loc[:h] if cumulative else hourly
+    return {
         "date": str(ctx.day), "weekday": f"{ctx.weekday}・{ctx.day_type}", "time": f"{h:02d}:00",
         "location": "臺中市｜中央氣象署臺中測站", "outdoor_temp": float(hourly.loc[h, "temp_c"]),
         "rh": float(hourly.loc[h, "rh_pct"]), "house_kw": float(hourly.loc[h, "kwh"]),
         "period": hourly.loc[h, "period_label"], "price": float(hourly.loc[h, "price"]),
-        "today_kwh": r.total_kwh, "today_cost": r.energy_cost, "mode": ctx.mode_schedule.name,
+        "today_kwh": float(upto["kwh"].sum()), "today_cost": float(upto["cost"].sum()),
+        "mode": ctx.mode_schedule.name,
     }
+
+
+def _payload_at(ctx: AppContext, h: int, cumulative: bool = False) -> dict:
+    r = ctx.selected
     payload = build_payload(ctx.settings, ctx.house, ctx.layout, ctx.templates, r, ctx.plan, ctx.remote, h,
-                            status, room_comfort(ctx.analyzer, r, h))
+                            _status(ctx, h, cumulative), room_comfort(ctx.analyzer, r, h))
     payload["people"] = person_states(ctx.sim.schedule, ctx.house, r.day_type, h, ctx.person_overrides)
-    payload["day_type_label"] = "平日" if r.day_type == "weekday" else "假日"
+    return payload
+
+
+def day_frames(ctx: AppContext) -> list[dict]:
+    """一天 24 小時的動畫畫格（C2）：每小時各房間室溫、家電狀態、人物位置與狀態列。
+    推演結果已經包含整天，這裡只是把每個小時的狀態整理好一次送到瀏覽器，播放時不用重算。"""
+    frames = []
+    for h in range(24):
+        p = _payload_at(ctx, h, cumulative=True)
+        frames.append({
+            "hour": h, "status": p["status"], "people": p["people"],
+            "rooms": {r["id"]: {"temp": r["temp"], "comfort": r["comfort"]} for r in p["rooms"]},
+            "appliances": {a["key"]: {"on": a["on"], "watts": a["watts"], "setpoint": a["setpoint"],
+                                      "manual": a["manual"]} for a in p["appliances"]},
+        })
+    return frames
+
+
+def make_payload(ctx: AppContext, frames: bool = False) -> dict:
+    """平面圖元件需要的資料（首頁的精簡版也用這一份）。frames=True 時另附一天 24 小時的動畫畫格。"""
+    payload = _payload_at(ctx, ctx.hour)
+    payload["day_type_label"] = "平日" if ctx.selected.day_type == "weekday" else "假日"
+    if frames:
+        payload["frames"] = day_frames(ctx)
     return payload
 
 
@@ -99,7 +128,7 @@ def handle_event(ctx: AppContext, event: dict | None, payload: dict) -> None:
 def render(ctx: AppContext) -> None:
     page_header("FLOOR PLAN · 智慧平面圖", "拖曳家電、遙控操作", [
         (f"🕑 模擬時間 <b>{ctx.hour:02d}:00</b>", ""), (f"🎛️ {ctx.mode_schedule.name}", "")])
-    payload = make_payload(ctx)
+    payload = make_payload(ctx, frames=True)
     handle_event(ctx, floorplan(payload), payload)
 
     with st.expander("這張圖怎麼用？"):
@@ -111,4 +140,6 @@ def render(ctx: AppContext) -> None:
 - **遙控器**：點一下家電圖示開啟。操作從左側「模擬時間」那一小時起生效到當天結束，
   例如把時間調到 17:00、遠端打開主臥冷氣，就能看到「下班前預冷」對用電與室溫的影響。
 - **狀態列**：日期、模擬時間、地點、室外溫濕度、目前電價時段、全屋即時用電、今日累計用電與電費。
+- **播放一天**：按上方「▶ 播放一天」，平面圖從 0 時播到 23 時（室溫、家電、人物位置逐時變化），可拖曳時間軸、
+  切換速度；播放時不能拖曳或遙控，按「回到模擬時間」恢復操作。播放使用已算好的結果，不會重新推演。
 """)
