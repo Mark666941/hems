@@ -46,7 +46,8 @@ hems/
 │   ├── optimizer.py   # 四種模式的最佳化（modes.json 參數 → ControlPlan）
 │   └── metrics.py     # 指標計算（含 PMV/PPD）、模式比較、節省建議、報告
 ├── app.py             # Streamlit 前端（streamlit run app.py）
-├── run_app.py         # 一鍵啟動：桌面視窗（pywebview）或瀏覽器；VS Code 按 F5、或雙擊 start_hems.bat
+├── run_app.py         # 一鍵啟動：桌面視窗（pywebview）或瀏覽器；VS Code 按 F5、雙擊 start_hems.bat 或桌面捷徑
+├── assets/            # 程式圖示（scripts/make_icon.py 產生）；桌面捷徑由 scripts/create_shortcut.py 建立
 ├── .vscode/           # VS Code 啟動設定（F5）與虛擬環境設定
 ├── ui/                # 介面輔助：settings.py（設定 ↔ 核心模組）、charts.py（Altair 互動圖表）
 ├── .streamlit/        # Streamlit 主題設定
