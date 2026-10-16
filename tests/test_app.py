@@ -23,15 +23,29 @@ def test_app_loads_without_errors(app):
     assert labels[:6] == ["用電", "流動電費", "尖峰占比", "舒適時間", "平均 PPD", "碳排放"]
 
 
-def test_sidebar_interactions(app):
-    app.sidebar.segmented_control[0].set_value("冬季代表日").run()
+def test_sidebar_menu(app):
+    """左側為功能選單：每項一個按鈕＋目前設定摘要，點選才開啟設定視窗。"""
+    labels = [b.label for b in app.sidebar.button]
+    for title in ("📅 日期與時間", "💰 電價方案", "🎛️ 運轉模式", "🌡️ 舒適偏好", "🏠 格局與房間"):
+        assert any(label.startswith(title) for label in labels)
+    hour = app.session_state.ui["hour"]
+    button = "後 1 小時 ▶" if hour < 23 else "◀ 前 1 小時"
+    next(b for b in app.sidebar.button if b.label == button).click().run()
+    assert app.session_state.ui["hour"] == (hour + 1 if hour < 23 else hour - 1)
     assert not app.exception
-    app.sidebar.radio[0].set_value("白天／夜間不同模式").run()
-    assert not app.exception
-    app.sidebar.segmented_control[0].set_value("自選日期").run()
-    app.sidebar.date_input[0].set_value(date(2026, 4, 15)).run()
-    app.sidebar.selectbox[0].set_value("progressive").run()
-    assert not app.exception
+
+
+def test_settings_change_updates_summary(app):
+    # 設定視窗按「套用」後寫入 session_state.ui；這裡直接修改狀態，模擬各種組合
+    for changes in ({"preset": "冬季代表日"}, {"schedule_type": "switch"},
+                    {"preset": "自選日期", "custom_day": date(2026, 4, 15)}, {"plan_id": "progressive"}):
+        app.session_state.ui.update(changes)
+        app.run()
+        assert not app.exception
+    captions = [c.value for c in app.sidebar.caption]
+    assert any("2026-04-15" in c for c in captions)
+    assert any("累進" in c for c in captions)
+    assert any("→ 23:00 舒眠模式" in c for c in captions)
 
 
 def test_invalid_settings_show_error_instead_of_crash(app):

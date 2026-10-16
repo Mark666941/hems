@@ -39,6 +39,25 @@ def _hour_axis(title: str = "時", field: str = "hour") -> alt.X:
                  axis=alt.Axis(values=HOURS, tickMinStep=1, grid=False, labelExpr="datum.value"))
 
 
+PERIOD_COLORS = {"尖峰": "#eb6834", "半尖峰": "#eda100", "離峰": "#1baf7a", "不分時段": "#2a78d6"}
+
+
+def price_bars(prices: pd.DataFrame) -> alt.Chart:
+    """24 小時電價長條：顏色代表時段（尖峰／半尖峰／離峰），電價說明視窗用。"""
+    present = [p for p in PERIOD_COLORS if p in set(prices["時段"])]
+    data = prices[["hour", "price", "時段"]].astype({"hour": int, "price": float})
+    bars = alt.Chart(data).mark_bar(cornerRadiusTopLeft=3, cornerRadiusTopRight=3).encode(
+        x=alt.X("hour:O", title="時", axis=alt.Axis(labelAngle=0)),
+        y=alt.Y("price:Q", title="元/度", scale=alt.Scale(domain=[0, 8])),
+        color=alt.Color("時段:N", scale=alt.Scale(domain=present, range=[PERIOD_COLORS[p] for p in present]),
+                        legend=alt.Legend(orient="top", title=None)),
+        tooltip=[alt.Tooltip("hour:O", title="時"), "時段:N", alt.Tooltip("price:Q", title="元/度", format=".2f")],
+    )
+    labels = bars.mark_text(dy=-7, fontSize=10, color="#6f6e69").encode(text=alt.Text("price:Q", format=".2f"),
+                                                                        color=alt.value("#6f6e69"))
+    return (bars + labels).properties(height=280)
+
+
 def hourly_stacked(result: SimulationResult) -> alt.LayerChart:
     """全屋逐時用電，依用電分類堆疊；灰底為尖峰時段。"""
     wide = result.hourly_by_category()
