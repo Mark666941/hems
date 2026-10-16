@@ -305,6 +305,7 @@ def build_payload(settings: dict, house: House, layout: dict, templates: dict, r
     return {"rooms": rooms, "appliances": appliances, "status": status, "addable": ADDABLE}
 
 
-def floorplan(payload: dict, key: str = "floorplan"):
-    """顯示平面圖元件，回傳使用者最後一次操作（拖曳、遙控器）的事件。"""
-    return _component(data=payload, key=key, default=None)
+def floorplan(payload: dict, key: str = "floorplan", compact: bool = False):
+    """顯示平面圖元件，回傳使用者最後一次操作（拖曳、遙控器）的事件。
+    compact=True 為首頁用的唯讀精簡版：只畫平面圖，不能拖曳、沒有遙控器與狀態列。"""
+    return _component(data={**payload, "compact": compact}, key=key, default=None)

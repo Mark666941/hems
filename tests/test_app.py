@@ -17,10 +17,19 @@ def app():
 
 
 def test_app_loads_without_errors(app):
+    """首頁：家中此刻的四張大數字卡。"""
     assert not app.exception and not app.error
-    assert len(app.tabs) == 8
-    labels = [m.label for m in app.metric]
-    assert labels[:6] == ["用電", "流動電費", "尖峰占比", "舒適時間", "平均 PPD", "碳排放"]
+    html = " ".join(m.value for m in app.markdown)
+    for label in ("此刻用電", "今日用電", "今日電費", "在家"):
+        assert label in html
+
+
+@pytest.mark.parametrize("page", ["plan", "analysis", "forecast", "settings", "about"])
+def test_every_page_renders(page):
+    at = AppTest.from_file(str(Path(__file__).resolve().parent.parent / "app.py"), default_timeout=180)
+    at.session_state["_test_page"] = page
+    at.run()
+    assert not at.exception and not at.error
 
 
 def test_sidebar_menu(app):
@@ -29,9 +38,11 @@ def test_sidebar_menu(app):
     for title in ("📅 日期與時間", "💰 電價方案", "🎛️ 運轉模式", "🌡️ 舒適偏好", "🏠 格局與房間"):
         assert any(label.startswith(title) for label in labels)
     hour = app.session_state.ui["hour"]
-    button = "後 1 小時 ▶" if hour < 23 else "◀ 前 1 小時"
+    button = "▶" if hour < 23 else "◀"
     next(b for b in app.sidebar.button if b.label == button).click().run()
     assert app.session_state.ui["hour"] == (hour + 1 if hour < 23 else hour - 1)
+    next(b for b in app.sidebar.button if b.label == "現在").click().run()   # 回到現在
+    assert app.session_state.ui["hour"] == __import__("datetime").datetime.now().hour
     assert not app.exception
 
 

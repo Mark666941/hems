@@ -1,10 +1,22 @@
-# Streamlit 介面主題：主色與圖表、平面圖的藍色一致。
-# 亮色、暗色分開設定，才能保留「跟隨系統」自動切換。
+# Streamlit 介面主題：預設深色、科技感配色（深藍黑底、藍青色點綴）。
+# 使用者可在右上角「⋮ → Settings」切換亮色。
+[theme]
+base = "dark"
+primaryColor = "#3ba7ff"
+backgroundColor = "#0b1220"
+secondaryBackgroundColor = "#121c30"
+textColor = "#e6edf7"
+borderColor = "#22314d"
+
 [theme.light]
 primaryColor = "#2a78d6"
 
 [theme.dark]
-primaryColor = "#3987e5"
+primaryColor = "#3ba7ff"
+backgroundColor = "#0b1220"
+secondaryBackgroundColor = "#121c30"
+textColor = "#e6edf7"
+borderColor = "#22314d"
 
 [server]
 headless = true

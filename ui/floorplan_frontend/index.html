@@ -14,13 +14,13 @@
     --shadow: 0 1px 2px rgba(0,0,0,.06), 0 4px 14px rgba(0,0,0,.07);
   }
   body.dark {
-    --bg: #1a1a19; --card: #242422; --ink: #f0efec; --ink2: #c3c2b7; --muted: #8f8d86;
-    --line: #34332f; --wall: #d6d4cc; --hall: #222220; --hatch: #2e2d2a; --grid: #262624;
-    --blue: #3987e5; --orange: #d95926; --aqua: #199e70; --yellow: #c98500; --cool: #3987e5;
-    --off: #5c5b56;
-    --room-bedroom: #1f2530; --room-living_room: #2a2720; --room-kitchen: #2a2521;
-    --room-bathroom: #1e2a28; --room-utility: #262624; --room-other: #252523;
-    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 4px 14px rgba(0,0,0,.35);
+    --bg: #0e1729; --card: #121c30; --ink: #e6edf7; --ink2: #b6c2d6; --muted: #8796ad;
+    --line: #22314d; --wall: #cfd8e6; --hall: #0f1a2c; --hatch: #1b2840; --grid: #152238;
+    --blue: #3ba7ff; --orange: #f97316; --aqua: #22c5a0; --yellow: #f2b01e; --cool: #3ba7ff;
+    --good: #22c55e; --warm: #f97316; --off: #4a5872;
+    --room-bedroom: #16233b; --room-living_room: #1b2438; --room-kitchen: #1d2234;
+    --room-bathroom: #13283a; --room-utility: #172036; --room-other: #172036;
+    --shadow: 0 1px 2px rgba(0,0,0,.45), 0 4px 16px rgba(0,0,0,.4);
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: transparent; color: var(--ink);
@@ -98,6 +98,10 @@
   .status span { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
   .status b { color: var(--ink); font-variant-numeric: tabular-nums; }
   .status svg { width: 15px; height: 15px; display: inline; }
+  body.compact .toolbar, body.compact .panel, body.compact .hint, body.compact .status { display: none; }
+  body.compact #app { border: 0; background: transparent; }
+  body.compact .main { min-height: 0; }
+  body.compact .appliance, body.compact .room { cursor: default; }
   .period { padding: 2px 8px; border-radius: 6px; font-size: 12px; font-weight: 700; color: #fff; }
 </style>
 </head>
@@ -162,7 +166,8 @@ function geometry() {
   const maxX = Math.max(...rooms.map((r) => r.x + r.w)), maxY = Math.max(...rooms.map((r) => r.y + r.d));
   const margin = 0.7;   // 公尺：留給指北針、比例尺
   const width = document.querySelector(".plan-wrap").clientWidth || 700;
-  const scale = Math.min((width - 24) / (maxX - minX + 2 * margin), 640 / (maxY - minY + 2 * margin));
+  const maxH = data.compact ? 340 : 640;   // 首頁的精簡模式比較矮
+  const scale = Math.min((width - 24) / (maxX - minX + 2 * margin), maxH / (maxY - minY + 2 * margin));
   const ox = 12 + (width - 24 - (maxX - minX + 2 * margin) * scale) / 2 - (minX - margin) * scale;
   const oy = 12 - (minY - margin) * scale;
   return { minX, minY, maxX, maxY, scale, ox, oy, width,
@@ -255,6 +260,7 @@ function drawPlan() {
       <text class="dim" x="${sx + m * s}" y="${sy + 15}" text-anchor="middle">${m} m</text>`).join("")}</g>`;
 
   svg.innerHTML = out;
+  if (data.compact) return;
   document.getElementById("hint").textContent = mode === "room"
     ? "拖曳房間調整格局（房間尺寸請在左側調整）"
     : "拖曳圖示移動家電（可拖到其他房間），點一下開啟遙控器";
@@ -399,7 +405,9 @@ function drawStatus() {
 function render() {
   if (!data) return;
   if (selected && !data.appliances.some((a) => a.key === selected)) selected = null;
-  drawPlan(); drawPanel(); drawStatus();
+  document.body.classList.toggle("compact", !!data.compact);
+  drawPlan();
+  if (!data.compact) { drawPanel(); drawStatus(); }
   Streamlit.setHeight(document.getElementById("app").scrollHeight + 2);
 }
 

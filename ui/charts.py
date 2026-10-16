@@ -80,6 +80,33 @@ def hourly_stacked(result: SimulationResult) -> alt.LayerChart:
     return (_period_layer(result.hourly) + bars).properties(height=320)
 
 
+def today_curve(result: SimulationResult, baseline: SimulationResult, hour: int) -> alt.LayerChart:
+    """首頁的今日用電曲線：目前模式（漸層面積）、一般習慣（灰線）、「現在」標線、尖峰灰底。"""
+    data = pd.DataFrame({"hour": HOURS, "目前模式": result.hourly["kwh"].values,
+                         "一般習慣": baseline.hourly["kwh"].values, "電價": result.hourly["price"].values,
+                         "時段": result.hourly["period_label"].values})
+    x = _hour_axis()
+    area = alt.Chart(data).mark_area(
+        interpolate="monotone", line={"color": "#3ba7ff", "strokeWidth": 2},
+        color=alt.Gradient(gradient="linear", x1=1, x2=1, y1=1, y2=0,
+                           stops=[alt.GradientStop(color="rgba(59,167,255,0.02)", offset=0),
+                                  alt.GradientStop(color="rgba(59,167,255,0.45)", offset=1)]),
+    ).encode(x=x, y=alt.Y("目前模式:Q", title="kWh"))
+    base_line = alt.Chart(data).mark_line(interpolate="monotone", color="#8a94a6", strokeWidth=1.5,
+                                          strokeDash=[4, 3]).encode(x=x, y="一般習慣:Q")
+    now = pd.DataFrame({"hour": [hour], "label": ["現在"]})
+    rule = alt.Chart(now).mark_rule(color="#22d3ee", strokeWidth=1.5, strokeDash=[3, 3]).encode(x="hour:Q")
+    label = alt.Chart(now).mark_text(color="#22d3ee", dy=-6, fontSize=11, fontWeight="bold").encode(
+        x="hour:Q", y=alt.value(0), text="label:N")
+    hover = alt.selection_point(fields=["hour"], nearest=True, on="pointerover", empty=False)
+    points = alt.Chart(data).mark_rule(color="#8a94a6").encode(
+        x="hour:Q", opacity=alt.condition(hover, alt.value(0.5), alt.value(0)),
+        tooltip=[alt.Tooltip("hour:Q", title="時"), alt.Tooltip("目前模式:Q", format=".2f", title="目前模式 kWh"),
+                 alt.Tooltip("一般習慣:Q", format=".2f", title="一般習慣 kWh"), "時段:N",
+                 alt.Tooltip("電價:Q", format=".2f", title="元/度")]).add_params(hover)
+    return (_period_layer(result.hourly) + area + base_line + rule + label + points).properties(height=230)
+
+
 def space_breakdown(result: SimulationResult) -> alt.Chart:
     """各空間用電，依分類堆疊（顏色意義同逐時圖）。"""
     data = (result.records.groupby(["space", "category"], as_index=False)["kwh"].sum()
@@ -91,7 +118,7 @@ def space_breakdown(result: SimulationResult) -> alt.Chart:
         color=alt.Color("分類:N", scale=_category_scale(), legend=alt.Legend(orient="top", title=None)),
         order=alt.Order("分類:N"),
         tooltip=["空間:N", "分類:N", alt.Tooltip("kwh:Q", title="kWh", format=".2f")],
-    ).properties(height=max(200, 32 * len(order)))
+    ).properties(height=44 * len(order) + 110)
 
 
 def mode_lines(results: dict[str, SimulationResult]) -> alt.LayerChart:
