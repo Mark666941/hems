@@ -167,6 +167,38 @@ def plot_modes(table, results: dict, path: Path) -> Path:
     return path
 
 
+def plot_metric_panels(table, metrics: list[tuple[str, str, str]], title: str, path: Path) -> Path:
+    """多指標小圖（small multiples）：每張小圖一個指標，長條依模式上色（顏色跟著模式走）。
+    metrics：[(欄位, 小圖標題, 數字格式)]，每列三張。"""
+    n = len(metrics)
+    cols = 3
+    rows = (n + cols - 1) // cols
+    fig, axes = plt.subplots(rows, cols, figsize=(12, 3.6 * rows), squeeze=False,
+                             gridspec_kw={"hspace": 0.6, "wspace": 0.3})
+    names = list(table["模式"])
+    colors = [MODE_COLORS[n] for n in names]
+    short = [n.replace("（一般習慣）", "").replace("模式", "") for n in names]
+    for i, (column, label, fmt) in enumerate(metrics):
+        ax = axes[i // cols][i % cols]
+        values = list(table[column])
+        bars = ax.bar(short, values, color=colors, width=0.6, zorder=3)
+        for bar, v in zip(bars, values):
+            ax.annotate(fmt.format(v), xy=(bar.get_x() + bar.get_width() / 2, v), xytext=(0, 3),
+                        textcoords="offset points", ha="center", va="bottom", fontsize=8, color=INK_2)
+        top = max(values) if max(values) > 0 else 1
+        is_share = "(%)" in column and top <= 100 and "PPD" not in column
+        ax.set_ylim(0, 112 if is_share else top * 1.2)   # 比例指標上限固定在 100% 附近
+        ax.grid(axis="x", visible=False)
+        ax.set_title(label, loc="left", fontsize=10)
+        ax.tick_params(axis="x", labelsize=9)
+    for j in range(n, rows * cols):
+        axes[j // cols][j % cols].set_visible(False)
+    fig.suptitle(title, x=0.06, ha="left", fontsize=13)
+    fig.savefig(path, dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    return path
+
+
 def plot_month(result: MonthResult, path: Path) -> Path:
     """整月每日用電（平日／假日）＋ 每日平均氣溫（上下兩張小圖，共用日期軸）。"""
     daily = result.daily()

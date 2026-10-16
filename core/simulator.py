@@ -112,6 +112,12 @@ class SimulationResult:
     def by_category(self) -> pd.Series:
         return self.records.groupby("category")["kwh"].sum().reindex(CATEGORIES, fill_value=0.0)
 
+    def cost_by_category(self) -> pd.Series:
+        """各用電分類的流動電費（元）：每小時用電 × 當時電價。"""
+        priced = self.records.merge(self.hourly[["hour", "price"]], on="hour")
+        cost = (priced["kwh"] * priced["price"]).groupby(priced["category"]).sum()
+        return cost.reindex(CATEGORIES, fill_value=0.0)
+
     def by_appliance(self) -> pd.DataFrame:
         return (self.records.groupby(["space", "appliance"], sort=False)["kwh"].sum()
                 .reset_index().query("kwh > 0"))

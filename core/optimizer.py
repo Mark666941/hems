@@ -496,9 +496,10 @@ class Optimizer:
             })
         return pd.DataFrame(rows), results
 
-    def compare_month(self, year: int, month: int, plan_id: str = "tou_2") -> pd.DataFrame:
+    def compare_month(self, year: int, month: int, plan_id: str = "tou_2") -> tuple[pd.DataFrame, dict]:
         """整月：基準與四種模式（每天各自最佳化）的月用電、月電費，並比較三種電價方案。
-        模式依 plan_id 的電價最佳化；同一份用電也換算成其他方案的電費，看值不值得換方案。"""
+        模式依 plan_id 的電價最佳化；同一份用電也換算成其他方案的電費，看值不值得換方案。
+        回傳（比較表, {模式名稱: 每日 SimulationResult 列表}）。"""
         import calendar
         from core.simulator import MonthResult
 
@@ -518,7 +519,7 @@ class Optimizer:
                 "平均舒適時間比例(%)": sum(s["舒適時間比例(%)"] for s in scores) / len(scores),
                 "平均溫差(°C)": sum(s["平均溫差(°C)"] for s in scores) / len(scores),
             })
-        return pd.DataFrame(rows)
+        return pd.DataFrame(rows), scenarios
 
 
 # ---------- 命令列 ----------
@@ -541,7 +542,7 @@ def main() -> None:
 
     if args.month:
         year, month = map(int, args.month.split("-"))
-        table = opt.compare_month(year, month, args.plan)
+        table, _ = opt.compare_month(year, month, args.plan)
         print(f"\n=== {args.month} 整月模式比較（依 {opt.sim.tariff.plans[args.plan]['name']} 最佳化）===")
         print(table.round(1).to_string(index=False))
         table.to_csv(out_dir / f"modes_month_{args.month}.csv", index=False, encoding="utf-8-sig")

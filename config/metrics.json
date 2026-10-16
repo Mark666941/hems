@@ -1,0 +1,23 @@
+{
+  "_說明": "分析層參數。",
+  "emission": {
+    "kg_co2e_per_kwh": 0.474,
+    "source": "經濟部能源署 113 年度（2024）電力排碳係數",
+    "_說明": "用電量 × 電力排碳係數 = 間接碳排放量（kg CO2e）。"
+  },
+  "pmv": {
+    "_說明": "ISO 7730 / ASHRAE 55 的 PMV-PPD 熱舒適模型，只評估清醒的人（PMV 不適用於睡眠）。平均輻射溫度近似等於室溫；冷氣運轉時室內相對濕度取 load_params 的 indoor_rh_pct，未運轉時由室外絕對濕度換算。",
+    "met_awake": 1.0,
+    "air_speed_m_s": {"ac_on": 0.15, "ac_off": 0.25},
+    "clo": {"cooling": 0.5, "heating": 1.0},
+    "comfort_limit": 0.5
+  },
+  "appliance_advice": {
+    "_說明": "耗電大戶的改善建議（設備面），saving_ratio 為相對目前耗電可節省的比例（典型值）。",
+    "water_heater": {"text": "電熱水器換成熱泵熱水器（COP 約 3–4）", "saving_ratio": 0.7},
+    "air_conditioner": {"text": "冷氣換成一級能效變頻機，並定期清洗濾網", "saving_ratio": 0.15},
+    "dryer": {"text": "烘衣機換成熱泵式乾衣機，或晴天改用自然晾乾", "saving_ratio": 0.5},
+    "refrigerator": {"text": "冰箱勿過滿、門封條定期檢查；老舊冰箱汰換為一級能效", "saving_ratio": 0.2},
+    "computer": {"text": "電腦設定自動睡眠，不用時關閉主機與螢幕", "saving_ratio": 0.2}
+  }
+}
