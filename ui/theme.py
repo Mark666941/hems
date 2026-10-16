@@ -82,6 +82,33 @@ section[data-testid="stSidebar"] [data-testid="stCaptionContainer"] { margin: -.
 
 /* 展開區塊 */
 [data-testid="stExpander"] details { border-radius: 14px; border-color: var(--hems-line); }
+
+/* 手機版（寬度 ≤ 640px；Streamlit 的欄位在這個寬度會自動上下排列） */
+@media (max-width: 640px) {
+  .block-container { padding: 3.2rem .8rem 2rem; }
+  .hems-head { gap: 10px; margin-bottom: 10px; }
+  .hems-head .title { font-size: 1.3rem; }
+  .hems-head .title small { font-size: .7rem; letter-spacing: .12em; }
+  .hems-chips { gap: 6px; flex-wrap: nowrap; overflow-x: auto; width: 100%; padding-bottom: 4px;
+    -webkit-overflow-scrolling: touch; scrollbar-width: none; }
+  .hems-chips::-webkit-scrollbar { display: none; }
+  .hems-chip { font-size: .74rem; padding: 4px 9px; }
+  .hems-kpis { gap: 10px; margin: 4px 0 14px; }
+  .hems-kpi { padding: 12px 12px 10px; border-radius: 14px; }
+  .hems-kpi .value { font-size: 1.55rem; }
+  .hems-kpi .value .unit { font-size: .8rem; }
+  .hems-kpi .sub { font-size: .72rem; }
+  .hems-cmp { grid-template-columns: 4.6rem 1fr 5.6rem; gap: 6px 8px; font-size: .8rem; }
+  .hems-cmp .vals { font-size: .72rem; }
+  .hems-tip { font-size: .86rem; }
+  .hems-legend { flex-wrap: wrap; gap: 6px 12px; }
+  [data-testid="stMetricValue"] { font-size: 1.4rem; }
+  [data-testid="stTabs"] [role="tablist"] { overflow-x: auto; scrollbar-width: none; }
+  .stButton button, .stDownloadButton button { min-height: 2.6rem; }     /* 手指好點 */
+}
+@media (max-width: 380px) {
+  .hems-kpis { grid-template-columns: minmax(0, 1fr); }                    /* 很窄的手機：卡片一欄 */
+}
 </style>"""
 
 

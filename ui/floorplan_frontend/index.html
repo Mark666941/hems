@@ -131,6 +131,20 @@
   .player .frame-time { font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; min-width: 46px; }
   .player .playing-badge { color: var(--orange); font-weight: 600; font-size: 12px; }
   body.compact .player { display: none; }
+  /* 手機版：工具列、播放列、狀態列縮小並換行，按鈕加大方便手指點選 */
+  @media (max-width: 520px) {
+    .toolbar { padding: 10px 12px; gap: 8px; }
+    .toolbar h2 { font-size: 15px; }
+    .seg { margin-left: 0; width: 100%; }
+    .seg button { flex: 1; padding: 8px 6px; }
+    .player { padding: 8px 12px; gap: 6px; }
+    .player input[type=range] { order: 5; flex-basis: 100%; }
+    .player button, .player select { padding: 8px 10px; }
+    .status { gap: 4px 14px; padding: 10px 12px; font-size: 12px; }
+    .panel { padding: 12px; gap: 10px; }
+    .hint { margin: 0 10px 10px; font-size: 11px; }
+    .temp-ctl button { width: 54px; height: 54px; }
+  }
   body.playback .appliance, body.playback .person, body.playback .room { cursor: default; }
 </style>
 </head>
