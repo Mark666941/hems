@@ -172,3 +172,16 @@ def test_old_default_names_are_migrated():
     for m, n in zip(s["schedule"]["members"], names):
         m["name"] = n
     assert [m["name"] for m in migrate(s)["schedule"]["members"]] == ["爸爸", "媽媽", "哥哥", "自訂名字"]
+
+
+def test_replace_profiles_in_one_transaction(tmp_path):
+    from core.storage import Store
+    store = Store(f"sqlite:///{(tmp_path / 'r.db').as_posix()}")
+    uid = store.passwordless_user("示範帳號")
+    old = store.create_profile(uid, "前一位訪客改過的", {"a": 1}, {})
+    store.add_record(uid, old, "bill", {"kwh": 1})
+    first = store.replace_profiles(uid, [("示範一", {"x": 1}, {}, [("habit", {"h": 1}), ("bill", {"kwh": 2})]),
+                                         ("示範二", {"x": 2}, {}, [])])
+    assert [name for _, name in store.list_profiles(uid)] == ["示範一", "示範二"]   # 舊的被清掉
+    assert store.last_profile(uid) == first
+    assert len(store.list_records(uid, first)) == 2

@@ -72,3 +72,16 @@ def test_login_screen_demo_button(monkeypatch):
     assert at.session_state.profile_name == "示範：四口之家（標配）"
     md = " ".join(m.value for m in at.markdown)
     assert "帳單合計比模擬" in md                                    # 預測頁已有示範帳單
+
+
+def test_warmup_key_matches_demo_profile(tmp_path):
+    # app.py 的背景預先計算用 migrate(default_settings()) 的快取 key；
+    # 訪客按「示範帳號」後，設定經資料庫存取、migrate 後的 key 必須完全相同，預先算好的結果才用得到
+    from core.storage import Store
+    from ui.account import migrate
+    from ui.demo import enter_demo
+    from ui.settings import default_settings, sim_key
+    store = Store(f"sqlite:///{(tmp_path / 'w.db').as_posix()}")
+    uid = enter_demo(store, {"onboarded": False})
+    loaded = migrate(store.load_profile(uid, store.last_profile(uid)).settings)
+    assert sim_key(loaded) == sim_key(migrate(default_settings()))

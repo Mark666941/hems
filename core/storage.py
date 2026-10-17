@@ -21,7 +21,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, create_engine, select
+from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, create_engine, delete, select
 from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
 DEFAULT_DB = Path(__file__).resolve().parent.parent / "data" / "user" / "hems.db"
@@ -173,6 +173,31 @@ class Store:
             for p in s.scalars(select(Profile).where(Profile.user_id == user_id)):
                 s.delete(p)
             s.get(User, user_id).last_profile_id = None
+
+    def replace_profiles(self, user_id: int, profiles: list[tuple[str, dict, dict, list[tuple[str, dict]]]]) -> int:
+        """刪除使用者原有的設定檔與紀錄，再建立新的設定檔與紀錄，全部在同一個交易完成（示範帳號用）。
+        雲端資料庫每次交易都要跨網路往返，原本分開做約 13 次交易，合併成 1 次。
+        profiles：[(名稱, 設定, 介面選項, [(紀錄種類, 內容)])]；回傳第一個設定檔 id（設為最後使用）。"""
+        with Session(self.engine) as s, s.begin():
+            old_ids = s.scalars(select(Profile.id).where(Profile.user_id == user_id)).all()
+            if old_ids:
+                s.execute(delete(UsageRecord).where(UsageRecord.profile_id.in_(old_ids)))
+                s.execute(delete(Profile).where(Profile.id.in_(old_ids)))
+            now, first = _now(), None
+            for name, settings, ui, records in profiles:
+                profile = Profile(user_id=user_id, name=name.strip() or "未命名",
+                                  settings_json=json.dumps(settings, ensure_ascii=False),
+                                  ui_json=json.dumps(ui, ensure_ascii=False, default=str), updated_at=now)
+                s.add(profile)
+                s.flush()
+                first = first or profile.id
+                for kind, data in records:
+                    if kind not in RECORD_KINDS:
+                        raise ValueError(f"未知的紀錄種類：{kind}")
+                    s.add(UsageRecord(profile_id=profile.id, kind=kind, created_at=now,
+                                      data_json=json.dumps(data, ensure_ascii=False)))
+            s.get(User, user_id).last_profile_id = first
+            return first
 
     def username(self, user_id: int) -> str:
         with Session(self.engine) as s:

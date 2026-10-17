@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import copy
 import json
+import threading
 from datetime import date, datetime
 
 import streamlit as st
@@ -20,13 +21,14 @@ from core.data_source import WeatherUnavailable, load_representative_days
 from core.models import load_space_templates
 from core.optimizer import MODE_ORDER, ModeSchedule
 from ui import charts
-from ui.account import account_dialog, autosave, ensure_session
+from ui.account import account_dialog, autosave, ensure_session, migrate
 from ui.context import (
     WEEKDAY_NAMES,
     AppContext,
     available_dates,
     get_analyzer,
     month_bills,
+    run_baseline,
     run_schedule,
     run_with_remote,
     update_settings,
@@ -50,6 +52,32 @@ from ui.wizard import open_wizard, show_wizard_if_open
 
 st.set_page_config(page_title="HEMS 居家能源管理", page_icon="⚡", layout="wide")
 apply_theme()
+
+# ---------- 背景預先計算 ----------
+
+@st.cache_resource(show_spinner=False)
+def start_warmup() -> threading.Thread:
+    """伺服器啟動後第一次有人開網頁時（每個伺服器程序只做一次），在背景先算好「預設房型、夏季代表日、
+    正常模式」的首頁結果。訪客在登入畫面的這段時間計算就在進行，按下「示範帳號」時直接取用快取。
+    雲端免費主機單核心又慢，示範帳號第一次進入首頁原本要約 27 秒。參數必須與 app 實際呼叫的完全相同。"""
+    def work() -> None:
+        try:
+            settings = migrate(default_settings())          # 示範帳號的設定載入時也會經過 migrate
+            key = sim_key(settings)
+            an = get_analyzer(key)
+            day0, normal = load_representative_days()["summer"], an.opt.modes["normal"]
+            schedule = ModeSchedule.single(normal)
+            run_schedule(an, key, day0, "tou_2", tuple(schedule.by_hour), schedule.name, "coordinate")
+            run_baseline(an, key, day0, "tou_2")
+        except Exception:   # noqa: BLE001  預先計算失敗不影響使用，之後照常計算
+            get_logger("app").exception("背景預先計算失敗")
+
+    thread = threading.Thread(target=work, name="hems-warmup", daemon=True)
+    thread.start()
+    return thread
+
+
+start_warmup()
 
 # ---------- 狀態 ----------
 

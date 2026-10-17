@@ -58,8 +58,9 @@ def create_demo_profiles(store: Store, user_id: int, default_ui: dict) -> int:
 
 
 def enter_demo(store: Store, default_ui: dict) -> int:
-    """進入示範帳號：重設成示範資料，回傳使用者 id。"""
+    """進入示範帳號：重設成示範資料，回傳使用者 id。
+    刪除前一位訪客的資料與建立示範資料在同一個交易完成（雲端資料庫跨網路往返，原本約 13 次交易）。"""
     user_id = store.passwordless_user(DEMO_USER)
-    store.reset_user(user_id)
-    create_demo_profiles(store, user_id, default_ui)
+    profiles = [(name, settings, ui_to_json(ui), records) for name, settings, ui, records in demo_profiles(default_ui)]
+    store.replace_profiles(user_id, profiles)
     return user_id
