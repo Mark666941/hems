@@ -8,25 +8,58 @@
 from __future__ import annotations
 
 import logging
+import multiprocessing
 import os
 from collections.abc import Callable
 from concurrent.futures import ProcessPoolExecutor
+from pathlib import Path
 
 log = logging.getLogger("hems.parallel")
 _POOL: ProcessPoolExecutor | None = None
+
+
+def _container_limits() -> tuple[int | None, int | None]:
+    """Linux 容器（例如 Streamlit Community Cloud）實際可用的 CPU 數與記憶體上限（位元組）；讀不到時回傳 None。
+    os.cpu_count() 回報的是整台主機的核心數，照它開子程序可能超過容器的記憶體而被強制結束。"""
+    cpus = mem = None
+    if hasattr(os, "sched_getaffinity"):
+        cpus = len(os.sched_getaffinity(0))
+    for path in ("/sys/fs/cgroup/cpu.max",):                 # cgroup v2：「配額 週期」
+        try:
+            quota, period = Path(path).read_text().split()[:2]
+            if quota != "max":
+                cpus = max(1, min(cpus or 999, int(int(quota) / int(period))))
+        except (OSError, ValueError):
+            pass
+    for path in ("/sys/fs/cgroup/memory.max", "/sys/fs/cgroup/memory/memory.limit_in_bytes"):
+        try:
+            value = Path(path).read_text().strip()
+            if value != "max" and int(value) < 1 << 50:
+                mem = int(value)
+                break
+        except (OSError, ValueError):
+            pass
+    return cpus, mem
 
 
 def worker_count() -> int:
     env = os.environ.get("HEMS_WORKERS")
     if env:
         return max(1, int(env))
-    return max(1, min(12, (os.cpu_count() or 2) - 1))   # 保留一個核心給介面
+    n = max(1, min(12, (os.cpu_count() or 2) - 1))       # 保留一個核心給介面
+    cpus, mem = _container_limits()
+    if cpus is not None:
+        n = min(n, max(1, cpus - 1))
+    if mem is not None:                                   # 每個子程序約需 400 MB（pandas、scipy 等），主程序另留 600 MB
+        n = min(n, max(1, (mem - 600 * 2**20) // (400 * 2**20)))
+    return n
 
 
 def _pool() -> ProcessPoolExecutor:
     global _POOL
     if _POOL is None:
-        _POOL = ProcessPoolExecutor(max_workers=worker_count())
+        # 一律用 spawn：Linux 預設的 fork 會複製正在執行的 Streamlit 伺服器（多執行緒），可能卡住
+        _POOL = ProcessPoolExecutor(max_workers=worker_count(), mp_context=multiprocessing.get_context("spawn"))
     return _POOL
 
 

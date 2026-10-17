@@ -16,6 +16,7 @@ import hmac
 import json
 import os
 import secrets
+import ssl
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -93,12 +94,29 @@ def resolve_url(url: str | None = None) -> str:
     return f"sqlite:///{DEFAULT_DB.as_posix()}"
 
 
+def connect_args(url: str) -> dict:
+    """雲端 PostgreSQL（pg8000）的連線加密。環境變數 HEMS_DB_SSL：
+    - require（預設）：加密連線，不驗證伺服器憑證（Supabase 使用自己的根憑證，系統預設的憑證庫驗證不過）
+    - verify：加密並驗證憑證；憑證檔路徑放 HEMS_DB_SSL_ROOT_CERT（Supabase 後台可下載）
+    - disable：不加密（本機測試用）"""
+    if not url.startswith("postgresql+pg8000"):
+        return {}
+    mode = os.environ.get("HEMS_DB_SSL", "require")
+    if mode == "disable":
+        return {}
+    ctx = ssl.create_default_context(cafile=os.environ.get("HEMS_DB_SSL_ROOT_CERT") or None)
+    if mode != "verify":
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+    return {"ssl_context": ctx}
+
+
 class Store:
     """帳號與設定檔的存取。所有方法都在自己的交易中完成，失敗會回滾。"""
 
     def __init__(self, url: str | None = None):
         self.url = resolve_url(url)
-        self.engine = create_engine(self.url, pool_pre_ping=True)
+        self.engine = create_engine(self.url, pool_pre_ping=True, connect_args=connect_args(self.url))
         Base.metadata.create_all(self.engine)
 
     @property

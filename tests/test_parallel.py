@@ -32,3 +32,22 @@ def test_energy_cost_matches_reprice(plan):
     an = Analyzer()
     r = an.sim.run(pd.Timestamp("2026-07-20").date())
     assert an.sim.energy_cost(r, plan) == pytest.approx(an.sim.reprice(r, plan).energy_cost)
+
+
+def test_worker_count_respects_container_memory(monkeypatch):
+    monkeypatch.delenv("HEMS_WORKERS", raising=False)
+    monkeypatch.setattr(parallel, "_container_limits", lambda: (8, 1024 * 2**20))      # 1 GB 容器
+    assert parallel.worker_count() == 1                                                  # 記憶體只夠主程序＋1 個
+    monkeypatch.setattr(parallel, "_container_limits", lambda: (2, None))
+    assert parallel.worker_count() == 1                                                  # 2 核心：保留 1 個給介面
+    monkeypatch.setattr(parallel, "_container_limits", lambda: (None, None))
+    assert parallel.worker_count() >= 1
+
+
+def test_postgres_connection_is_encrypted(monkeypatch):
+    from core.storage import connect_args
+    assert connect_args("sqlite:///x.db") == {}
+    monkeypatch.delenv("HEMS_DB_SSL", raising=False)
+    assert "ssl_context" in connect_args("postgresql+pg8000://u:p@db.example.com:5432/postgres")
+    monkeypatch.setenv("HEMS_DB_SSL", "disable")
+    assert connect_args("postgresql+pg8000://u:p@localhost/postgres") == {}
