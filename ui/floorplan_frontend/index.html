@@ -126,6 +126,7 @@
             font-size: 13px; color: var(--ink2); flex-wrap: wrap; }
   .player button, .player select { font: inherit; font-size: 13px; border-radius: 9px; border: 1px solid var(--line);
             background: var(--card); color: var(--ink); padding: 5px 11px; cursor: pointer; }
+  .player select { width: auto; flex: none; }   /* 蓋過全域 select 的 width:100%，速度選單與按鈕同一行 */
   .player button.primary { background: var(--blue); border-color: var(--blue); color: #fff; font-weight: 600; }
   .player input[type=range] { flex: 1; min-width: 140px; accent-color: var(--blue); }
   .player .frame-time { font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; min-width: 46px; }

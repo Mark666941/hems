@@ -67,7 +67,7 @@ def month_insights(daily: pd.DataFrame, mode: str, price: float) -> list[Insight
         hot = base["temp_mean_c"].quantile(0.75)
         out.append(Insight("🌡️", "天氣越熱、冷氣越耗電",
                            f"室外日均溫每升高 1°C，冷氣每天約多用 <b>{slope:.2f} 度</b>（約 {slope * price:.1f} 元，"
-                           f"R² = {r2:.2f}）。日均溫 ≥ {hot:.1f}°C 的日子，建議提早關窗簾、出門前預冷，"
+                           f"R² = {r2:.2f}）。日均溫達 {hot:.1f}°C 以上的日子，建議提早關窗簾、出門前預冷，"
                            "或在這些天改用省電模式。"))
 
     # 2. 最耗電的日子集中在哪裡

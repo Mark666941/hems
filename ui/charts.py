@@ -84,7 +84,7 @@ def month_daily_lines(daily: pd.DataFrame, field: str = "kwh", title: str = "每
     return alt.Chart(data).mark_line(point=alt.OverlayMarkDef(size=14), strokeWidth=2).encode(
         x=alt.X("date:T", title="日期", axis=alt.Axis(format="%m/%d")),
         y=alt.Y(f"{field}:Q", title=title),
-        color=alt.Color("模式:N", scale=_mode_scale(names), sort=names, legend=alt.Legend(orient="top", title=None)),
+        color=alt.Color("模式:N", scale=_mode_scale(names), sort=names, legend=alt.Legend(orient="top", title=None, columns=3)),
         tooltip=[alt.Tooltip("date:T", title="日期", format="%Y-%m-%d"), "模式:N",
                  alt.Tooltip(f"{field}:Q", title=title, format=fmt),
                  alt.Tooltip("temp_mean_c:Q", title="日均溫（°C）", format=".1f")],
@@ -96,7 +96,7 @@ def temp_vs_ac(daily: pd.DataFrame) -> alt.LayerChart:
     names = list(dict.fromkeys(daily["模式"]))
     data = daily[["date", "模式", "temp_mean_c", "ac_kwh"]].copy()
     data["date"] = pd.to_datetime(data["date"])
-    color = alt.Color("模式:N", scale=_mode_scale(names), sort=names, legend=alt.Legend(orient="top", title=None))
+    color = alt.Color("模式:N", scale=_mode_scale(names), sort=names, legend=alt.Legend(orient="top", title=None, columns=3))
     points = alt.Chart(data).mark_circle(size=42, opacity=0.75).encode(
         x=alt.X("temp_mean_c:Q", title="室外日均溫（°C）", scale=alt.Scale(zero=False)),
         y=alt.Y("ac_kwh:Q", title="冷氣用電（度／天）"), color=color,

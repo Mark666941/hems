@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import io
 import re
-import textwrap
+import unicodedata
 from datetime import date
 
 import matplotlib
@@ -27,8 +27,25 @@ from matplotlib.backends.backend_pdf import PdfPages  # noqa: E402
 
 A4 = (8.27, 11.69)
 LEFT, TOP, BOTTOM = 0.08, 0.93, 0.06
-WRAP = 46                 # 每行約幾個中文字
+WRAP = 46                 # 每行約幾個中文字（英數字算半個）
 COLORS = dict(zip(MODE_NAMES, MODE_COLORS))
+
+
+def _wrap(text: str, width: int) -> list[str]:
+    """依顯示寬度換行：中文全形字算 1、英數字算 0.5（中文沒有空白，不能用 textwrap 依空白斷行）。"""
+    lines, cur, w = [], "", 0.0
+    for ch in text:
+        cw = 1.0 if unicodedata.east_asian_width(ch) in "WF" else 0.5
+        if w + cw > width and cur:
+            lines.append(cur.rstrip())
+            cur, w = "", 0.0
+            if ch == " ":
+                continue
+        cur += ch
+        w += cw
+    if cur:
+        lines.append(cur)
+    return lines
 
 
 def _plain(html: str) -> str:
@@ -53,11 +70,11 @@ class _TextPages:
         self.y -= 0.045
 
     def line(self, text: str, size: float = 10, color: str = "#0b0b0b", bold: bool = False, gap: float = 0.0) -> None:
-        for part in textwrap.wrap(text, WRAP if size <= 10.5 else int(WRAP * 10 / size)) or [""]:
+        for part in _wrap(text, WRAP if size <= 10.5 else int(WRAP * 10 / size)) or [""]:
             if self.y < BOTTOM:
                 self._new_page()
             self.fig.text(LEFT, self.y, part, fontsize=size, color=color, fontweight="bold" if bold else "normal")
-            self.y -= 0.0062 * size / 3.5 + 0.0105
+            self.y -= 0.0021 * size + 0.006
         self.y -= gap
 
     def table(self, df: pd.DataFrame, height: float) -> None:
