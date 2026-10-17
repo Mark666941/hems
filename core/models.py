@@ -18,7 +18,7 @@ import pandas as pd
 CONFIG_DIR = Path(__file__).resolve().parent.parent / "config"
 
 # 房屋設定中可以覆寫的家電欄位
-_OVERRIDABLE_FIELDS = {"name", "power_w", "enabled"}
+_OVERRIDABLE_FIELDS = {"name", "power_w", "enabled", "capacity_kw", "grade"}
 
 
 class LoadType(Enum):
@@ -42,6 +42,8 @@ class Appliance:
     power_w: float
     load_type: LoadType
     enabled: bool = True
+    capacity_kw: float | None = None   # 冷氣額定冷房能力（kW）；None 時由額定耗電 × 額定 COP 推算
+    grade: int | None = None           # 冷氣能源效率等級 1–5；None 時用 load_params.json 的 rated_cop
 
 
 @dataclass

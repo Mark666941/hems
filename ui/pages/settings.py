@@ -10,6 +10,8 @@ import streamlit as st
 from ui.context import AppContext, update_settings
 from ui.settings import (
     ROUTINE_LABELS,
+    ac_spec_rows,
+    apply_ac_specs,
     apply_routine_times,
     apply_spaces_table,
     build_house,
@@ -52,12 +54,32 @@ def render(ctx: AppContext) -> None:
                                     disabled=["key", "空間", "家電", "類型"],
                                     column_order=["空間", "家電", "類型", "功率(W)", "啟用"],
                                     column_config={"功率(W)": st.column_config.NumberColumn(min_value=0, step=10)})
-        st.caption("冷氣的功率為額定耗電，冷房能力 = 功率 × 額定 COP。熱水器改用瓦斯時，取消勾選電熱水器。")
+        st.caption("冷氣的功率為額定耗電；在下方「冷氣規格」設定能力（kW）後，功率改由能力 ÷ 能效等級的 COP 推算。"
+                   "熱水器改用瓦斯時，取消勾選電熱水器。")
         if st.button("套用家電設定"):
             new = copy.deepcopy(settings)
-            new["appliance_edits"] = {r["key"]: {"power_w": r["功率(W)"], "enabled": bool(r["啟用"])}
-                                      for r in edited_app.to_dict("records")}
+            for r in edited_app.to_dict("records"):   # 保留冷氣能力、能效等級等其他欄位
+                new["appliance_edits"][r["key"]] = {**new["appliance_edits"].get(r["key"], {}),
+                                                    "power_w": r["功率(W)"], "enabled": bool(r["啟用"])}
             update_settings(new, "已更新家電設定")
+
+    with st.expander("❄️ 冷氣規格：能力與能源效率等級"):
+        ac_cfg = ctx.analyzer.sim.load_model.params["air_conditioner"]
+        options = ac_cfg["capacity_options_kw"]
+        st.caption(f"能力空白＝沿用上方功率推算（功率 × 額定 COP {ac_cfg['rated_cop']}）。建議能力以每坪約 0.55 kW 估算，"
+                   "西曬或頂樓房間建議再大一級。能效等級：" +
+                   "、".join(f"{g} 級 COP {c}" for g, c in ac_cfg["grade_cop"].items()) + "（額定條件）。")
+        edited_ac = st.data_editor(
+            pd.DataFrame(ac_spec_rows(settings, options)), hide_index=True, key="ac_spec_editor", width="stretch",
+            disabled=["key", "空間", "坪數", "建議能力(kW)"], column_order=["空間", "坪數", "建議能力(kW)", "能力(kW)", "能效等級"],
+            column_config={"能力(kW)": st.column_config.SelectboxColumn(options=options),
+                           "能效等級": st.column_config.SelectboxColumn(options=[1, 2, 3, 4, 5])})
+        c1, c2 = st.columns(2)
+        if c1.button("套用冷氣規格", type="primary"):
+            update_settings(apply_ac_specs(settings, edited_ac.to_dict("records")), "已更新冷氣規格")
+        if c2.button("全部依建議能力、一級能效"):
+            rows = [{**r, "能力(kW)": r["建議能力(kW)"], "能效等級": 1} for r in ac_spec_rows(settings, options)]
+            update_settings(apply_ac_specs(settings, rows), "已套用建議冷氣規格")
 
     with st.expander("🕒 作息時間"):
         st.caption("調整起床、就寢、外出時間；盥洗、三餐、洗澡等時段沿用預設。")

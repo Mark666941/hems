@@ -61,14 +61,17 @@
     "rated_cop": 3.6,
     "rated_outdoor_c": 35,
     "rated_indoor_c": 27,
-    "cop_outdoor_coef": 0.025,
-    "cop_indoor_coef": 0.03,
+    "rated_indoor_wb_c": 19,
+    "grade_cop": {"1": 4.3, "2": 4.0, "3": 3.6, "4": 3.3, "5": 3.0},
+    "capacity_options_kw": [2.2, 2.8, 3.6, 4.1, 5.0, 5.6, 6.3, 7.1, 8.0],
+    "cap_ft": [0.942587793, 0.009543347, 0.000683770, -0.011042676, 0.000005249, -0.000009720],
+    "eir_ft": [0.342414409, 0.034885008, -0.000623700, 0.004977216, 0.000437951, -0.000728028],
     "min_part_load": 0.3,
     "part_load_gain": 0.3,
     "cycling_degradation": 0.25,
     "min_cop": 1.5,
     "natural_ventilation_below_c": 24,
-    "_說明": "natural_ventilation_below_c：室外低於此溫度時，住戶開窗通風而不開冷氣（估計）。額定 COP 為 CNS 14464 標準條件（室外 35°C、室內 27°C）下的值，額定冷房能力 = 額定耗電 × rated_cop。COP 隨室外溫度每升 1°C 降 2.5%、隨設定溫度每升 1°C 增 3%（典型變頻機線性近似）。部分負載：負載率在 min_part_load 以上時，變頻效率提升 part_load_gain ×（1 − 負載率）；低於最低負載率時壓縮機啟停，效率依 cycling_degradation 下降。"
+    "_說明": "額定 COP 為 CNS 14464 標準條件（室外 35°C、室內 27°C 乾球／19°C 濕球）下的值，額定冷房能力 = 額定耗電 × 額定 COP。性能曲線 cap_ft、eir_ft：冷房能力與耗電比（EIR = 1/COP）隨室內濕球溫度 x 與室外乾球溫度 y 變化的二次曲面 a + bx + cx² + dy + ey² + fxy（EnergyPlus 範例檔 DX 冷氣曲線 HPACCoolCapFT／HPACCoolEIRFT），以額定條件正規化為 1。室內濕球溫度由設定溫度與室內濕度算出：室內越乾、室外越熱，能力與效率越低。grade_cop：能源效率等級對應的額定 COP（估計：台灣分級以 CSPF 為準，此處換算為額定 COP，每級約差 8%）；capacity_options_kw：市售分離式冷氣常見能力。部分負載：負載率在 min_part_load 以上時，變頻效率提升 part_load_gain ×（1 − 負載率）；低於最低負載率時壓縮機啟停，效率依 cycling_degradation 下降。natural_ventilation_below_c：室外低於此溫度時，住戶開窗通風而不開冷氣（估計）。"
   },
 
   "lighting": {

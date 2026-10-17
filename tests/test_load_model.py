@@ -7,11 +7,15 @@ from core.load_model import (
     SpaceGeometry,
     ac_cop,
     ac_power,
+    ac_rating,
     cooling_load,
     effective_wall_temps,
     humidity_ratio,
+    indoor_wet_bulb,
     load_params,
+    performance_factors,
     task_hourly,
+    wet_bulb_c,
 )
 from core.models import load_house
 from core.schedule import Schedule
@@ -74,7 +78,8 @@ def test_ac_power_and_capacity_limit(params):
     assert r.power_w == pytest.approx(r.delivered_w / r.cop)
     assert r.unmet_w == 0
     big = ac_power(10000, rated_power_w=800, t_out=33, t_set=26, ac=ac)
-    assert big.delivered_w == pytest.approx(800 * ac["rated_cop"])
+    cap_factor, _ = performance_factors(33, indoor_wet_bulb(26, None, ac), ac)   # 冷房能力隨溫度變化
+    assert big.delivered_w == pytest.approx(800 * ac["rated_cop"] * cap_factor)
     assert big.unmet_w > 0
     assert ac_power(-50, 800, 25, 26, ac).power_w == 0
 
@@ -144,3 +149,36 @@ def test_daily_total_in_reasonable_range(setup):
         total += df[[a.id for a in space.appliances if a.id in df]].sum().sum() / 1000
     total += sum(t["energy_kwh"] for t in model.shiftable_tasks(summer, "weekday"))
     assert 10 < total < 25
+
+
+# ---------- A5 冷氣性能曲線 ----------
+
+def test_wet_bulb_known_values():
+    assert wet_bulb_c(27, 47) == pytest.approx(19.2, abs=0.3)   # CNS 14464 額定室內 27°C／19°C 濕球
+    assert wet_bulb_c(30, 100) == pytest.approx(30, abs=0.4)    # 飽和時濕球 = 乾球
+
+
+def test_performance_curves_rated_point_and_trends(params):
+    ac = params["air_conditioner"]
+    cap, cop = performance_factors(ac["rated_outdoor_c"], ac["rated_indoor_wb_c"], ac)
+    assert cap == pytest.approx(1.0) and cop == pytest.approx(1.0)        # 額定條件正規化為 1
+    cap_hot, cop_hot = performance_factors(38, 19, ac)
+    cap_mild, cop_mild = performance_factors(30, 19, ac)
+    assert cap_hot < 1 < cap_mild and cop_hot < 1 < cop_mild                # 室外越熱，能力與效率越低
+    _, cop_dry = performance_factors(35, 17, ac)
+    assert cop_dry < 1                                                      # 室內越乾（濕球低），效率越低
+    assert cop_hot > 0.85 and cop_mild < 1.2                                # 典型範圍：±5°C 約 ±10%
+
+
+def test_ac_grade_and_capacity(params):
+    from core.models import Appliance, LoadType
+    ac = params["air_conditioner"]
+    unit = Appliance("air_conditioner", "冷氣", 800, LoadType.ADJUSTABLE, capacity_kw=3.6, grade=1)
+    rated_w, rated_cop = ac_rating(unit, ac)
+    assert rated_cop == ac["grade_cop"]["1"] and rated_w == pytest.approx(3600 / rated_cop)
+    old = Appliance("air_conditioner", "冷氣", 800, LoadType.ADJUSTABLE)
+    assert ac_rating(old, ac) == (800, ac["rated_cop"])                     # 沒設定時沿用舊參數
+    # 同樣負載，一級冷氣比五級省電
+    g1 = ac_power(2000, *ac_rating(unit, ac)[:1], 33, 26, ac, rated_cop=ac["grade_cop"]["1"])
+    g5 = ac_power(2000, 3600 / ac["grade_cop"]["5"], 33, 26, ac, rated_cop=ac["grade_cop"]["5"])
+    assert g1.power_w < g5.power_w * 0.75

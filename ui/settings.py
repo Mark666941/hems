@@ -10,6 +10,8 @@ import copy
 import json
 from pathlib import Path
 
+import pandas as pd
+
 from core.load_model import LoadModel, load_params
 from core.metrics import Analyzer
 from core.models import House, house_from_config, load_appliance_catalog, load_space_templates
@@ -30,7 +32,7 @@ def default_settings() -> dict:
     baseline = load_baseline_plan()
     return {
         "house": _read("default_house.json"),
-        "appliance_edits": {},            # "空間id/家電id" → {"power_w": …, "enabled": …}
+        "appliance_edits": {},            # "空間id/家電id" → {"power_w", "enabled"，冷氣另有 "capacity_kw", "grade"}
         "schedule": _read("schedule.json"),
         "modes": _read("modes.json"),
         "baseline_setpoint_c": baseline.default_setpoint,
@@ -59,6 +61,9 @@ def build_house(settings: dict) -> House:
         if appliance is not None:
             appliance.power_w = float(edit.get("power_w", appliance.power_w))
             appliance.enabled = bool(edit.get("enabled", appliance.enabled))
+            if appliance.id == "air_conditioner":       # 冷氣能力（kW）與能效等級；None 代表沿用功率推算
+                appliance.capacity_kw = edit.get("capacity_kw", appliance.capacity_kw)
+                appliance.grade = edit.get("grade", appliance.grade)
     return house
 
 
@@ -72,6 +77,42 @@ def build_analyzer(settings: dict, params: dict | None = None) -> Analyzer:
     baseline = ControlPlan(name="基準（一般習慣）", default_setpoint=float(settings["baseline_setpoint_c"]))
     optimizer = Optimizer(simulator, modes_config=settings["modes"], baseline=baseline)
     return Analyzer(optimizer)
+
+
+# ---------- 冷氣規格 ----------
+
+KW_PER_PING = 0.55   # 冷氣能力估算：每坪約 0.5–0.6 kW（約 450–500 kcal/h，台灣業界常用經驗值）
+
+
+def suggested_capacity_kw(area_ping: float, options: list[float]) -> float:
+    """依坪數建議冷氣能力：坪數 × 0.55 kW，取市售規格中不小於此值的最小者。"""
+    need = area_ping * KW_PER_PING
+    return next((o for o in options if o >= need), options[-1])
+
+
+def ac_spec_rows(settings: dict, options: list[float]) -> list[dict]:
+    """每台冷氣的規格表（介面用）：空間、坪數、建議能力、目前能力、能效等級。"""
+    house = build_house(settings)
+    rows = []
+    for space, a in house.all_appliances():
+        if a.id != "air_conditioner":
+            continue
+        rows.append({"key": f"{space.id}/{a.id}", "空間": space.name, "坪數": space.area_ping,
+                     "建議能力(kW)": suggested_capacity_kw(space.area_ping, options),
+                     "能力(kW)": a.capacity_kw, "能效等級": a.grade})
+    return rows
+
+
+def apply_ac_specs(settings: dict, rows: list[dict]) -> dict:
+    """冷氣規格表 → 設定（保留同一台冷氣的功率與啟用設定）。空白代表沿用額定功率推算。"""
+    new = copy.deepcopy(settings)
+    for r in rows:
+        edit = dict(new["appliance_edits"].get(r["key"], {}))
+        cap, grade = r.get("能力(kW)"), r.get("能效等級")
+        edit["capacity_kw"] = float(cap) if cap not in (None, "") and not pd.isna(cap) else None
+        edit["grade"] = int(grade) if grade not in (None, "") and not pd.isna(grade) else None
+        new["appliance_edits"][r["key"]] = edit
+    return new
 
 
 # ---------- 房型 ----------

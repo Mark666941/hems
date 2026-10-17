@@ -93,7 +93,10 @@ def test_settings_key_is_stable():
 def test_default_settings_reproduce_core_results():
     analyzer = build_analyzer(default_settings())
     table, _ = analyzer.compare_day(date(2026, 7, 20))
-    assert table.loc[0, "用電(kWh)"] == pytest.approx(15.22, abs=0.05)   # 與階段 5 基準一致
+    from core.simulator import Simulator, load_baseline_plan
+    core_kwh = Simulator().run(date(2026, 7, 20), "tou_2", load_baseline_plan()).total_kwh
+    assert table.loc[0, "用電(kWh)"] == pytest.approx(core_kwh, abs=0.001)   # 介面設定與核心模組結果一致
+    assert 10 < core_kwh < 25                                                  # 夏季平日全屋用電合理範圍
 
 
 def test_add_space_from_template():

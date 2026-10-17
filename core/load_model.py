@@ -2,7 +2,8 @@
 
 冷房負載（W）＝ 外牆傳熱 + 窗戶傳熱 + 窗戶日射 + 人體（顯熱＋潛熱）
              + 室內家電發熱 + 外氣滲透（顯熱＋潛熱）+ 蓄熱移除（pull-down）
-冷氣耗電（W）＝ 冷房負載 ÷ COP，COP 隨室外溫度、設定溫度、部分負載率變化。
+冷氣耗電（W）＝ 冷房負載 ÷ COP；冷房能力與 COP 依性能曲線（室外乾球、室內濕球）與部分負載率變化，
+             額定 COP 依能源效率等級。
 
 簡化假設（之後可精進）：
 - 外牆用「等效日射溫度（sol-air）＋ 時滯與衰減」近似牆體蓄熱，假設每天天氣週期性重複。
@@ -157,10 +158,38 @@ def cooling_load(
 
 # ---------- 冷氣效率 ----------
 
-def ac_cop(t_out: float, t_set: float, part_load: float, ac: dict) -> float:
-    """冷氣 COP：額定值 × 溫度修正 × 部分負載修正。"""
-    temp_factor = (1 - ac["cop_outdoor_coef"] * (t_out - ac["rated_outdoor_c"])
-                   + ac["cop_indoor_coef"] * (t_set - ac["rated_indoor_c"]))
+def wet_bulb_c(t_c: float, rh_pct: float) -> float:
+    """濕球溫度（Stull 2011 經驗式，適用 RH 5–99%、−20–50°C，誤差約 ±0.3°C）。"""
+    rh = min(max(rh_pct, 5.0), 99.0)
+    return (t_c * math.atan(0.151977 * math.sqrt(rh + 8.313659)) + math.atan(t_c + rh) - math.atan(rh - 1.676331)
+            + 0.00391838 * rh ** 1.5 * math.atan(0.023101 * rh) - 4.686035)
+
+
+def _biquadratic(c: list[float], x: float, y: float) -> float:
+    return c[0] + c[1] * x + c[2] * x * x + c[3] * y + c[4] * y * y + c[5] * x * y
+
+
+def performance_factors(t_out: float, t_wb_in: float, ac: dict) -> tuple[float, float]:
+    """冷氣性能曲線：回傳（冷房能力倍率, COP 倍率），額定條件（室內濕球 19°C、室外 35°C）時皆為 1。
+    能力倍率 = CapFT(x, y) ÷ CapFT(額定)；COP 倍率 = EIRFT(額定) ÷ EIRFT(x, y)。"""
+    x0, y0 = ac["rated_indoor_wb_c"], ac["rated_outdoor_c"]
+    cap = _biquadratic(ac["cap_ft"], t_wb_in, t_out) / _biquadratic(ac["cap_ft"], x0, y0)
+    cop = _biquadratic(ac["eir_ft"], x0, y0) / _biquadratic(ac["eir_ft"], t_wb_in, t_out)
+    return cap, cop
+
+
+def indoor_wet_bulb(t_set: float, rh_in: float | None, ac: dict) -> float:
+    """室內回風濕球溫度；rh_in 未給時用額定條件的濕度（使設定溫度等於額定室內溫度時正好是額定點）。"""
+    if rh_in is None:
+        return ac["rated_indoor_wb_c"] + (t_set - ac["rated_indoor_c"]) * 0.75   # 等濕度下濕球隨乾球的變化率約 0.75
+    return wet_bulb_c(t_set, rh_in)
+
+
+def ac_cop(t_out: float, t_set: float, part_load: float, ac: dict,
+           rated_cop: float | None = None, rh_in: float | None = None) -> float:
+    """冷氣 COP：額定值 × 性能曲線（室外溫度、室內濕球）× 部分負載修正。"""
+    rated_cop = ac["rated_cop"] if rated_cop is None else rated_cop
+    _, cop_factor = performance_factors(t_out, indoor_wet_bulb(t_set, rh_in, ac), ac)
     plr_min = ac["min_part_load"]
     if part_load >= plr_min:
         # 變頻機降頻運轉時效率較高
@@ -169,7 +198,15 @@ def ac_cop(t_out: float, t_set: float, part_load: float, ac: dict) -> float:
         # 低於最低轉速，壓縮機開開停停，效率下降
         plf_min = 1 + ac["part_load_gain"] * (1 - plr_min)
         plf = plf_min * (1 - ac["cycling_degradation"] * (1 - part_load / plr_min))
-    return max(ac["min_cop"], ac["rated_cop"] * temp_factor * plf)
+    return max(ac["min_cop"], rated_cop * cop_factor * plf)
+
+
+def ac_rating(appliance: Appliance, ac: dict) -> tuple[float, float]:
+    """一台冷氣的（額定耗電 W, 額定 COP）。有設定能力（kW）時，額定耗電 = 能力 ÷ 該等級 COP。"""
+    rated_cop = ac["grade_cop"][str(appliance.grade)] if appliance.grade else ac["rated_cop"]
+    if appliance.capacity_kw:
+        return appliance.capacity_kw * 1000 / rated_cop, rated_cop
+    return appliance.power_w, rated_cop
 
 
 @dataclass
@@ -182,14 +219,17 @@ class ACResult:
 
 
 def ac_power(load_w: float, rated_power_w: float, t_out: float, t_set: float,
-             ac: dict, on_fraction: float = 1.0) -> ACResult:
-    """冷氣耗電 = 冷房負載 ÷ COP；額定冷房能力 = 額定耗電 × 額定 COP。"""
+             ac: dict, on_fraction: float = 1.0, rated_cop: float | None = None,
+             rh_in: float | None = None) -> ACResult:
+    """冷氣耗電 = 冷房負載 ÷ COP；冷房能力 = 額定耗電 × 額定 COP × 能力倍率（室外越熱能力越低）。"""
     if load_w <= 0 or on_fraction <= 0:
         return ACResult(0.0, 0.0, 0.0, 0.0, 0.0)
-    capacity = rated_power_w * ac["rated_cop"] * on_fraction
+    rated_cop = ac["rated_cop"] if rated_cop is None else rated_cop
+    cap_factor, _ = performance_factors(t_out, indoor_wet_bulb(t_set, rh_in, ac), ac)
+    capacity = rated_power_w * rated_cop * cap_factor * on_fraction
     delivered = min(load_w, capacity)
     part_load = delivered / capacity
-    cop = ac_cop(t_out, t_set, part_load, ac)
+    cop = ac_cop(t_out, t_set, part_load, ac, rated_cop, rh_in)
     return ACResult(delivered / cop, delivered, load_w - delivered, cop, part_load)
 
 
@@ -209,6 +249,10 @@ class LoadModel:
         self.params = params or load_params()
         self.awake = set(schedule.activities) - NOT_AWAKE
         self._people_cache: dict[tuple, tuple[list[float], list[float]]] = {}
+        # 有設定能力（kW）與能效等級的冷氣：額定耗電由能力 ÷ COP 推得，讓介面與排程顯示一致
+        for _, a in house.all_appliances():
+            if a.id == "air_conditioner" and a.capacity_kw:
+                a.power_w = ac_rating(a, self.params["air_conditioner"])[0]
 
     # ----- 人體發熱 -----
 
@@ -326,6 +370,8 @@ class LoadModel:
         ua_closed = geo.conductance_w_k(self.params, self.params["infiltration"]["ach"])
         ua_open = geo.conductance_w_k(self.params, self.params["infiltration"]["natural_ventilation_ach"])
         ua_exhaust = self._exhaust_conductance(space, appliance_w)
+        rated_w, rated_cop = ac_rating(ac_unit, ac) if has_ac else (0.0, ac["rated_cop"])
+        rh_ac = self.params["infiltration"]["indoor_rh_pct"]
 
         def free_running(h: int, t_start: float) -> tuple[float, float]:
             """冷氣沒開時的室溫，一階熱響應（1R1C 模型）：
@@ -358,7 +404,7 @@ class LoadModel:
                                     ppl_s[h], ppl_l[h], internal[h], on, pulldown)
                 if not has_ac or on <= 0:
                     load = CoolingLoad()  # 冷氣沒開就沒有冷房負載（只記錄耗電為 0）
-                result = ac_power(load.total, ac_unit.power_w if has_ac else 0, temps[h], setpoints[h], ac, on)
+                result = ac_power(load.total, rated_w, temps[h], setpoints[h], ac, on, rated_cop, rh_ac)
                 cooling = on > 0 and load.total > 0
                 t_ac = self._cooled_room_temp(load, result, setpoints[h], t_room, ua_closed, capacity_kj_k, on) \
                     if cooling else t_free
