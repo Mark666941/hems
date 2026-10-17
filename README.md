@@ -78,7 +78,7 @@
 - **資料層**：SQLAlchemy 同一套程式支援本機 SQLite 與雲端 PostgreSQL；密碼以 PBKDF2-SHA256 加鹽雜湊
 - **自訂 Streamlit 元件**：平面圖以 HTML/SVG/JavaScript 撰寫，手寫元件通訊協定與 Python 雙向溝通
 - **快取**：設定序列化為 JSON 作為快取 key；平面圖上的圖示位置不影響模擬快取
-- **測試**：149 項 pytest（物理公式、能量守恆、最佳化取捨、資料庫、介面 AppTest 等）
+- **測試**：211 項 pytest（物理公式、能量守恆、最佳化取捨、資料庫、介面 AppTest 等）
 
 ## 快速開始
 
