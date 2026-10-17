@@ -44,3 +44,14 @@ def test_better_grade_saves_energy():
         return result.records.query("appliance_id == 'air_conditioner'")["kwh"].sum()
     g1, g5 = ac_kwh(1), ac_kwh(5)
     assert g1 == pytest.approx(g5 * 3.0 / 4.3, rel=0.03)   # 耗電約與額定 COP 成反比（部分負載率略有不同）
+
+
+def test_table_text_choices_roundtrip():
+    s = default_settings()
+    rows = ac_spec_rows(s, OPTIONS)
+    assert rows[0]["能力(kW)"] == "依功率推算" and rows[0]["能效等級"] == "未指定"
+    rows[0] = {**rows[0], "能力(kW)": "4.1 kW", "能效等級": "2 級"}
+    new = apply_ac_specs(s, rows)
+    again = ac_spec_rows(new, OPTIONS)
+    assert again[0]["能力(kW)"] == "4.1 kW" and again[0]["能效等級"] == "2 級"
+    assert new["appliance_edits"][rows[0]["key"]]["capacity_kw"] == 4.1

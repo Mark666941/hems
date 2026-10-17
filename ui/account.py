@@ -12,6 +12,7 @@ import copy
 import json
 import os
 from datetime import date
+from pathlib import Path
 
 import streamlit as st
 from sqlalchemy.exc import SQLAlchemyError
@@ -63,12 +64,25 @@ OLD_DEFAULT_NAMES = {"parent_1": ("家長 1", "爸爸"), "parent_2": ("家長 2"
                      "child_1": ("小孩 1", "哥哥"), "child_2": ("小孩 2", "妹妹")}
 
 
+DEFAULT_HOUSE = Path(__file__).resolve().parent.parent / "config" / "default_house.json"
+
+
 def migrate(settings: dict) -> dict:
-    """舊版設定的遷移：成員仍是舊預設名稱（家長 1…）時改為新預設稱呼（爸爸…）；使用者自己改過的名字不動。"""
+    """舊版設定的遷移：成員仍是舊預設名稱（家長 1…）時改為新預設稱呼（爸爸…），使用者自己改過的名字不動；
+    標配房型的空間補上窗戶方位。"""
     for m in settings.get("schedule", {}).get("members", []):
         old, new = OLD_DEFAULT_NAMES.get(m["id"], (None, None))
         if old and m.get("name") == old:
             m["name"] = new
+    # A3 之前的設定沒有窗戶方位：標配房型的空間補上預設方位（只遷移一次，之後使用者改成「未指定」不再補）
+    house = settings.get("house", {})
+    if house and "orientation_version" not in house:
+        defaults = {sp["id"]: sp for sp in json.loads(DEFAULT_HOUSE.read_text(encoding="utf-8"))["spaces"]}
+        for sp in house.get("spaces", []):
+            d = defaults.get(sp["id"])
+            if "orientation" not in sp and d and d.get("orientation") and d["template"] == sp.get("template"):
+                sp["orientation"] = d["orientation"]
+        house["orientation_version"] = 1
     return settings
 
 

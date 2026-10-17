@@ -74,3 +74,17 @@ def test_orientation_in_spaces_table_roundtrip():
     house = build_house(apply_spaces_table(s, rows))
     assert house.get_space("bedroom_1").orientation == "E"
     assert house.get_space("master_bedroom").orientation is None
+
+
+def test_old_profiles_get_default_orientations_once():
+    from ui.account import migrate
+    from ui.settings import default_settings
+    s = default_settings()
+    for sp in s["house"]["spaces"]:          # 模擬 A3 之前存的設定：沒有方位
+        sp.pop("orientation", None)
+    s["house"].pop("orientation_version", None)
+    s = migrate(s)
+    by_id = {sp["id"]: sp for sp in s["house"]["spaces"]}
+    assert by_id["bedroom_1"]["orientation"] == "W" and s["house"]["orientation_version"] == 1
+    by_id["bedroom_1"].pop("orientation")    # 使用者之後改成「未指定」，不會再被補回
+    assert "orientation" not in {sp["id"]: sp for sp in migrate(s)["house"]["spaces"]}["bedroom_1"]

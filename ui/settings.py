@@ -85,6 +85,29 @@ def build_analyzer(settings: dict, params: dict | None = None) -> Analyzer:
 KW_PER_PING = 0.55   # 冷氣能力估算：每坪約 0.5–0.6 kW（約 450–500 kcal/h，台灣業界常用經驗值）
 
 
+AUTO_CAPACITY, NO_GRADE = "依功率推算", "未指定"
+
+
+def capacity_choices(options: list[float]) -> list[str]:
+    return [AUTO_CAPACITY, *(f"{o:g} kW" for o in options)]
+
+
+GRADE_CHOICES = [NO_GRADE, *(f"{g} 級" for g in range(1, 6))]
+
+
+def _leading_number(value) -> float | None:
+    """表格的值 → 數字："3.6 kW" → 3.6、"1 級" → 1、3.6 → 3.6；「依功率推算」、空白 → None。"""
+    if value is None or (isinstance(value, float) and pd.isna(value)):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    head = str(value).split()[0] if str(value).strip() else ""
+    try:
+        return float(head)
+    except ValueError:
+        return None
+
+
 def suggested_capacity_kw(area_ping: float, options: list[float]) -> float:
     """依坪數建議冷氣能力：坪數 × 0.55 kW，取市售規格中不小於此值的最小者。"""
     need = area_ping * KW_PER_PING
@@ -100,7 +123,8 @@ def ac_spec_rows(settings: dict, options: list[float]) -> list[dict]:
             continue
         rows.append({"key": f"{space.id}/{a.id}", "空間": space.name, "坪數": space.area_ping,
                      "建議能力(kW)": suggested_capacity_kw(space.area_ping, options),
-                     "能力(kW)": a.capacity_kw, "能效等級": a.grade})
+                     "能力(kW)": f"{a.capacity_kw:g} kW" if a.capacity_kw else AUTO_CAPACITY,
+                     "能效等級": f"{a.grade} 級" if a.grade else NO_GRADE})
     return rows
 
 
@@ -109,9 +133,9 @@ def apply_ac_specs(settings: dict, rows: list[dict]) -> dict:
     new = copy.deepcopy(settings)
     for r in rows:
         edit = dict(new["appliance_edits"].get(r["key"], {}))
-        cap, grade = r.get("能力(kW)"), r.get("能效等級")
-        edit["capacity_kw"] = float(cap) if cap not in (None, "") and not pd.isna(cap) else None
-        edit["grade"] = int(grade) if grade not in (None, "") and not pd.isna(grade) else None
+        cap, grade = _leading_number(r.get("能力(kW)")), _leading_number(r.get("能效等級"))
+        edit["capacity_kw"] = cap
+        edit["grade"] = int(grade) if grade else None
         new["appliance_edits"][r["key"]] = edit
     return new
 

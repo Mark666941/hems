@@ -10,12 +10,14 @@ import streamlit as st
 from core.solar import ORIENTATION_NAMES
 from ui.context import AppContext, update_settings
 from ui.settings import (
+    GRADE_CHOICES,
     ROUTINE_LABELS,
     ac_spec_rows,
     apply_ac_specs,
     apply_routine_times,
     apply_spaces_table,
     build_house,
+    capacity_choices,
     default_settings,
     routine_times,
     spaces_table,
@@ -71,14 +73,14 @@ def render(ctx: AppContext) -> None:
     with st.expander("❄️ 冷氣規格：能力與能源效率等級"):
         ac_cfg = ctx.analyzer.sim.load_model.params["air_conditioner"]
         options = ac_cfg["capacity_options_kw"]
-        st.caption(f"能力空白＝沿用上方功率推算（功率 × 額定 COP {ac_cfg['rated_cop']}）。建議能力以每坪約 0.55 kW 估算，"
+        st.caption(f"能力「依功率推算」＝沿用上方功率推算（功率 × 額定 COP {ac_cfg['rated_cop']}）。建議能力以每坪約 0.55 kW 估算，"
                    "西曬或頂樓房間建議再大一級。能效等級：" +
                    "、".join(f"{g} 級 COP {c}" for g, c in ac_cfg["grade_cop"].items()) + "（額定條件）。")
         edited_ac = st.data_editor(
             pd.DataFrame(ac_spec_rows(settings, options)), hide_index=True, key="ac_spec_editor", width="stretch",
             disabled=["key", "空間", "坪數", "建議能力(kW)"], column_order=["空間", "坪數", "建議能力(kW)", "能力(kW)", "能效等級"],
-            column_config={"能力(kW)": st.column_config.SelectboxColumn(options=options),
-                           "能效等級": st.column_config.SelectboxColumn(options=[1, 2, 3, 4, 5])})
+            column_config={"能力(kW)": st.column_config.SelectboxColumn(options=capacity_choices(options), required=True),
+                           "能效等級": st.column_config.SelectboxColumn(options=GRADE_CHOICES, required=True)})
         c1, c2 = st.columns(2)
         if c1.button("套用冷氣規格", type="primary"):
             update_settings(apply_ac_specs(settings, edited_ac.to_dict("records")), "已更新冷氣規格")
