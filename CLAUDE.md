@@ -63,6 +63,8 @@ hems/
 ├── .streamlit/        # Streamlit 主題設定
 ├── packaging/         # Windows 安裝程式：hems.spec（PyInstaller）、hems_installer.iss（Inno Setup）、build_installer.py
 ├── docs/developer_guide.md # 程式文件：執行流程、模組地圖、常見修改、錯誤記錄、測試
+├── docs/project_report.md  # 專案報告：架構、功能、技術、驗證成果、限制、未來方向、面試問答
+├── docs/deploy.md          # 部署步驟（Streamlit Community Cloud ＋ Supabase）
 ├── docs/images/       # 里程碑圖表（README 用）
 ├── docs/reports/      # 整月分析報告範例（Markdown）
 ├── output/            # 推演輸出 CSV、PNG（不進 git）
@@ -127,7 +129,7 @@ hems/
 - [x] 階段 5：基準推演引擎（無最佳化）→ 24 小時用電曲線【里程碑 1】
 - [x] 階段 6：四種模式與最佳化 → 各模式 24 小時推演結果【里程碑 2】
 - [x] 階段 7：指標與模式比較 → 比較表與圖
-- [ ] 階段 8：Streamlit 前端並部署【里程碑 3】（前端完成，待部署到 Streamlit Community Cloud）
+- [ ] 階段 8：Streamlit 前端並部署【里程碑 3】（前端與部署準備完成；作者依 docs/deploy.md 登入 Supabase、Streamlit Cloud 後即上線）
 - [ ] 階段 9：README、Demo 影片、備審說明
 
 ## 介面改版待辦（使用者回饋，依序執行）
