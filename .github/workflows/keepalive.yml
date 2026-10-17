@@ -1,0 +1,25 @@
+# 保持 Supabase 資料庫活躍：免費方案 7 天沒有資料庫活動會暫停，網頁版就無法登入。
+# 每 3 天（台灣時間 11:00）連一次資料庫；也可以在 GitHub 的 Actions 頁面按「Run workflow」手動執行。
+# 需要先在 repository 的 Settings → Secrets and variables → Actions 新增 HEMS_DATABASE_URL。
+name: keepalive
+
+on:
+  schedule:
+    - cron: "0 3 */3 * *"
+  workflow_dispatch:
+
+jobs:
+  ping-database:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: 安裝套件
+        run: pip install "sqlalchemy>=2.0" "pg8000>=1.30"
+      - name: 連線資料庫
+        env:
+          HEMS_DATABASE_URL: ${{ secrets.HEMS_DATABASE_URL }}
+        run: python scripts/db_keepalive.py

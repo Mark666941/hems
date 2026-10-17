@@ -51,6 +51,15 @@
 - 註冊一個自己的帳號 → 修改設定 → 重新整理網頁或換電腦登入，設定仍在
 - 「分析 → 整月分析與建議 → 下載分析報告（PDF）」：中文正常（`packages.txt` 會安裝 Noto CJK 字型）
 
+## 步驟 4（建議）：自動保持資料庫活躍
+
+Supabase 免費方案 7 天沒有資料庫活動會暫停，網頁版就無法登入。`.github/workflows/keepalive.yml` 每 3 天自動連一次資料庫：
+
+1. GitHub 的 repository 頁面 → **Settings** → 左側 **Secrets and variables** → **Actions**
+2. **New repository secret**：Name 填 `HEMS_DATABASE_URL`，Secret 貼上和 Streamlit Secrets 相同的網址（只要網址本身，不含 `url =` 和引號）
+3. 上方 **Actions** 分頁 → 左側 **keepalive** → **Run workflow**，看到綠色勾勾、紀錄裡有「資料庫連線正常」就完成
+4. 之後更換資料庫密碼時，Streamlit Secrets 與這個 GitHub Secret 都要一起改
+
 ## 常見問題
 
 | 狀況 | 原因與解法 |

@@ -129,7 +129,7 @@ hems/
 - [x] 階段 5：基準推演引擎（無最佳化）→ 24 小時用電曲線【里程碑 1】
 - [x] 階段 6：四種模式與最佳化 → 各模式 24 小時推演結果【里程碑 2】
 - [x] 階段 7：指標與模式比較 → 比較表與圖
-- [ ] 階段 8：Streamlit 前端並部署【里程碑 3】（前端與部署準備完成；作者依 docs/deploy.md 登入 Supabase、Streamlit Cloud 後即上線）
+- [x] 階段 8：Streamlit 前端並部署【里程碑 3】（https://hems-chong-he-jian.streamlit.app/ ；Supabase 資料庫，keepalive 每 3 天保持活躍）
 - [ ] 階段 9：README、Demo 影片、備審說明
 
 ## 介面改版待辦（使用者回饋，依序執行）
