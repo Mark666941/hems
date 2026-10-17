@@ -285,8 +285,10 @@ class Optimizer:
         return result
 
     def _space_objective(self, space, weather, day_type, prices, setpoints, ac_on, factors,
-                         ctx: ComfortContext, schedule: ModeSchedule, prefs: dict) -> tuple[float, pd.DataFrame]:
-        df = self.sim.load_model.space_hourly(space, weather, day_type, setpoints, ac_on, factors)
+                         ctx: ComfortContext, schedule: ModeSchedule, prefs: dict,
+                         neighbor_temps: dict | None = None) -> tuple[float, pd.DataFrame]:
+        df = self.sim.load_model.space_hourly(space, weather, day_type, setpoints, ac_on, factors,
+                                              neighbor_temps=neighbor_temps)
         cost = sum(w / 1000 * price for w, price in zip(df["air_conditioner"], prices))
         penalty = 0.0
         for h, temp in enumerate(df["room_temp_c"]):
@@ -299,7 +301,7 @@ class Optimizer:
         return cost + penalty, df
 
     def _optimize_space(self, space, weather, day_type, prices, schedule, ac_on, factors,
-                        season: str) -> tuple[dict, list[float]]:
+                        season: str, neighbor_temps: dict | None = None) -> tuple[dict, list[float]]:
         prefs = self.comfort["seasons"][season]
         ctx = self.contexts(day_type, season)[space.id]
         keys = sorted({self._variable_key(schedule, ctx, h) for h in range(24) if ac_on[h] > 0})
@@ -320,7 +322,7 @@ class Optimizer:
         def evaluate(levels) -> float:
             sp = self._setpoints_from_levels(levels, schedule, ctx)
             return self._space_objective(space, weather, day_type, prices, sp, ac_on, factors,
-                                         ctx, schedule, prefs)[0]
+                                         ctx, schedule, prefs, neighbor_temps)[0]
 
         levels = {k: preferred(k) for k in keys}
         best = evaluate(levels)
@@ -424,10 +426,17 @@ class Optimizer:
             if factors:
                 plan.appliance_factors[space.id] = factors
         for space in self.ac_spaces:
-            ac_on = self._ac_on(space, schedule, day_type, temps)
+            plan.ac_on[space.id] = self._ac_on(space, schedule, day_type, temps)
+        # 房間之間有隔間熱交換：先以偏好溫度推演一次得到各房室溫，逐房最佳化時把鄰房室溫當已知條件
+        neighbor_temps = None
+        if self.sim.load_model.interzone_ua:
+            frames = self.sim.run_spaces(weather, day_type, plan)
+            neighbor_temps = {sid: list(df["room_temp_c"]) for sid, df in frames.items()
+                              if self.sim.house.get_space(sid).area_ping > 0}
+        for space in self.ac_spaces:
+            ac_on = plan.ac_on[space.id]
             levels, setpoints = self._optimize_space(space, weather, day_type, prices, schedule, ac_on,
-                                                     plan.appliance_factors.get(space.id), season)
-            plan.ac_on[space.id] = ac_on
+                                                     plan.appliance_factors.get(space.id), season, neighbor_temps)
             plan.setpoints[space.id] = setpoints
             levels_all[space.id] = levels
 

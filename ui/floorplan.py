@@ -71,6 +71,38 @@ def auto_layout(settings: dict, templates: dict) -> dict[str, dict]:
     return layout
 
 
+def adjacency_from_layout(settings: dict, templates: dict, tol: float = 0.15) -> dict[tuple[str, str], float]:
+    """平面圖上相鄰房間的共用牆長（m）：兩個房間矩形的邊貼在一起（容許 tol 公尺誤差）時，重疊的長度。
+    沒有存過位置的房間用自動排列。給負載模型計算隔間熱交換（A2）。"""
+    saved = (settings.get("layout") or {}).get("rooms", {})
+    auto: dict | None = None
+    rects = {}
+    for cfg in settings["house"]["spaces"]:
+        area = float(cfg.get("area_ping", templates[cfg["template"]]["default_area_ping"]))
+        if area <= 0:                     # 公共設備沒有面積，不參與熱交換
+            continue
+        room = saved.get(cfg["id"])
+        if room is None:
+            auto = auto or auto_layout(settings, templates)
+            room = auto[cfg["id"]]
+        w, d = room_dims(cfg, room, templates)
+        rects[cfg["id"]] = (room["x"], room["y"], room["x"] + w, room["y"] + d)
+    result = {}
+    ids = list(rects)
+    for i, a in enumerate(ids):
+        ax0, ay0, ax1, ay1 = rects[a]
+        for b in ids[i + 1:]:
+            bx0, by0, bx1, by1 = rects[b]
+            length = 0.0
+            if abs(ax1 - bx0) < tol or abs(bx1 - ax0) < tol:          # 左右相鄰：重疊的 y 長度
+                length = max(length, min(ay1, by1) - max(ay0, by0))
+            if abs(ay1 - by0) < tol or abs(by1 - ay0) < tol:          # 上下相鄰：重疊的 x 長度
+                length = max(length, min(ax1, bx1) - max(ax0, bx0))
+            if length > tol:
+                result[tuple(sorted((a, b)))] = round(length, 2)
+    return result
+
+
 def ensure_layout(settings: dict, house: House, templates: dict) -> dict:
     """補齊格局：沒有位置的房間用自動排列，沒有位置的家電放在房間的預設點。不修改原設定。"""
     layout = copy.deepcopy(settings.get("layout") or {"rooms": {}, "appliances": {}})

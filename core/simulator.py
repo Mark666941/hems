@@ -169,6 +169,29 @@ class Simulator:
         self.weather = weather or CwaCsvWeatherSource()
         self.tariff = tariff or Tariff()
 
+    def run_spaces(self, weather: pd.DataFrame, day_type: str, control: ControlPlan,
+                   neighbor_temps: dict[str, list[float]] | None = None) -> dict[str, pd.DataFrame]:
+        """各空間逐時結果。房間之間有隔間熱交換：第一輪各自計算（或用給定的鄰房室溫），
+        之後以上一輪的鄰房室溫重算（Jacobi 迭代），直到室溫變化小於容許值。"""
+        iz = self.load_model.params["interzone"]
+        temps = neighbor_temps
+        frames: dict[str, pd.DataFrame] = {}
+        for _ in range(iz["coupling_iterations"] if self.load_model.interzone_ua else 1):
+            frames = {space.id: self.load_model.space_hourly(
+                space, weather, day_type,
+                setpoint_c=control.setpoint_for(space.id),
+                ac_on=control.ac_on.get(space.id),
+                appliance_factors=control.appliance_factors.get(space.id),
+                appliance_forced=control.appliance_forced.get(space.id),
+                neighbor_temps=temps,
+            ) for space in self.house.spaces}
+            new = {s.id: list(frames[s.id]["room_temp_c"]) for s in self.house.spaces if s.area_ping > 0}
+            if temps is not None and max(abs(a - b) for sid in new for a, b in zip(new[sid], temps[sid])) \
+                    < iz["coupling_tolerance_c"]:
+                break
+            temps = new
+        return frames
+
     def run(self, day: date, plan_id: str = "tou_2", control: ControlPlan | None = None) -> SimulationResult:
         control = control or load_baseline_plan()
         weather = self.weather.get_hourly_weather(day)
@@ -177,15 +200,10 @@ class Simulator:
 
         records, climate = [], []
 
-        # 1. 各空間：一般家電 + 冷氣
+        # 1. 各空間：一般家電 + 冷氣（房間之間經隔間牆互相影響，反覆計算到室溫收斂）
+        frames = self.run_spaces(weather, day_type, control)
         for space in self.house.spaces:
-            df = self.load_model.space_hourly(
-                space, weather, day_type,
-                setpoint_c=control.setpoint_for(space.id),
-                ac_on=control.ac_on.get(space.id),
-                appliance_factors=control.appliance_factors.get(space.id),
-                appliance_forced=control.appliance_forced.get(space.id),
-            )
+            df = frames[space.id]
             for a in space.appliances:
                 if a.id not in df.columns:
                     continue  # 可移轉家電另外處理
@@ -194,7 +212,7 @@ class Simulator:
                     records.append((h, space.id, space.name, a.id, a.name, a.load_type.label, category, w / 1000))
             if space.area_ping > 0:   # 公共設備沒有面積，不記錄室內狀態
                 part = df[["hour", "setpoint_c", "ac_on", "room_temp_c", "room_rh_pct", "load_total_w", "unmet_w",
-                           "cop"]].copy()
+                           "cop", "interzone_w"]].copy()
                 part.insert(1, "space_id", space.id)
                 part.insert(2, "space", space.name)
                 climate.append(part)

@@ -97,6 +97,7 @@ class CoolingLoad:
     infiltration_latent: float = 0.0
     pulldown: float = 0.0
     latent_pulldown: float = 0.0   # 冷氣開機時移除室內（含家具、牆面）累積水氣的潛熱
+    interzone: float = 0.0         # 隔間牆從相鄰房間傳入的熱（鄰房較涼時為負）
 
     @property
     def latent(self) -> float:
@@ -106,7 +107,7 @@ class CoolingLoad:
     @property
     def sensible(self) -> float:
         return (self.wall + self.window_conduction + self.window_solar + self.people_sensible
-                + self.internal + self.infiltration_sensible + self.pulldown)
+                + self.internal + self.infiltration_sensible + self.pulldown + self.interzone)
 
     @property
     def total(self) -> float:
@@ -147,6 +148,7 @@ def cooling_load(
     pulldown_w: float = 0.0,
     vertical_w_m2: float | None = None,
     latent_pulldown_w: float = 0.0,
+    interzone_w: float = 0.0,
 ) -> CoolingLoad:
     """計算某空間某小時的冷房負載。on_fraction 為冷氣這小時運轉的時間比例；
     人體與家電發熱已是一小時平均值，不再乘比例。
@@ -168,6 +170,7 @@ def cooling_load(
         infiltration_latent=f * inf["air_density"] * airflow_m3_s * inf["h_fg"] * (w_out - w_in),
         pulldown=pulldown_w,
         latent_pulldown=latent_pulldown_w,
+        interzone=interzone_w,
     )
 
 
@@ -248,6 +251,21 @@ def ac_power(load_w: float, rated_power_w: float, t_out: float, t_set: float,
     return ACResult(delivered / cop, delivered, load_w - delivered, cop, part_load)
 
 
+# ---------- 房間之間的熱交換（A2） ----------
+
+def default_adjacency(house: House, params: dict) -> dict[tuple[str, str], float]:
+    """沒有平面圖時的相鄰關係：每個房間都與客廳（公共區域）共用一面隔間牆，
+    牆長取地板面積的平方根（正方形房間的一邊）。台灣公寓的臥室、浴室、廚房多半開向客廳或走道。
+    回傳 {(房間 a, 房間 b): 共用牆長 m}。"""
+    rooms = [s for s in house.spaces if s.area_ping > 0]
+    hubs = [s for s in rooms if s.template == "living_room"]
+    if not hubs:
+        return {}
+    hub = max(hubs, key=lambda s: s.area_ping)
+    ping = params["geometry"]["ping_to_m2"]
+    return {tuple(sorted((s.id, hub.id))): round(math.sqrt(s.area_ping * ping), 2) for s in rooms if s is not hub}
+
+
 # ---------- 整合：空間逐時耗電 ----------
 
 def load_params(path: Path = CONFIG_DIR / "load_params.json") -> dict:
@@ -258,10 +276,22 @@ def load_params(path: Path = CONFIG_DIR / "load_params.json") -> dict:
 class LoadModel:
     """結合房屋、作息、參數，計算各空間 24 小時耗電。"""
 
-    def __init__(self, house: House, schedule: Schedule, params: dict | None = None):
+    def __init__(self, house: House, schedule: Schedule, params: dict | None = None,
+                 adjacency: dict[tuple[str, str], float] | None = None):
+        """adjacency：{(房間 a, 房間 b): 共用隔間牆長度 m}，介面由平面圖算出；None 時用 default_adjacency。"""
         self.house = house
         self.schedule = schedule
         self.params = params or load_params()
+        self.adjacency = default_adjacency(house, self.params) if adjacency is None else dict(adjacency)
+        # 隔間熱傳係數 UA（W/K）= U × 牆長 × 樓高
+        iz, height = self.params["interzone"], self.params["geometry"]["ceiling_height_m"]
+        ids = {s.id for s in house.spaces if s.area_ping > 0}
+        self.interzone_ua: dict[str, dict[str, float]] = {}
+        for (a, b), length in self.adjacency.items():
+            if a in ids and b in ids and length > 0:
+                ua = iz["u_partition"] * length * height
+                self.interzone_ua.setdefault(a, {})[b] = ua
+                self.interzone_ua.setdefault(b, {})[a] = ua
         self.awake = set(schedule.activities) - NOT_AWAKE
         self._people_cache: dict[tuple, tuple[list[float], list[float]]] = {}
         # 有設定能力（kW）與能效等級的冷氣：額定耗電由能力 ÷ COP 推得，讓介面與排程顯示一致
@@ -364,7 +394,8 @@ class LoadModel:
                      setpoint_c: float | list[float] = 26.0,
                      ac_on: list[float] | None = None,
                      appliance_factors: dict[str, list[float]] | None = None,
-                     appliance_forced: dict[str, list[float | None]] | None = None) -> pd.DataFrame:
+                     appliance_forced: dict[str, list[float | None]] | None = None,
+                     neighbor_temps: dict[str, list[float]] | None = None) -> pd.DataFrame:
         """某空間 24 小時的逐時結果：各家電耗電（W）、冷房負載組成、COP 等。
 
         weather：24 列，需有 temp_c、rh_pct、solar_mj_m2。
@@ -372,6 +403,7 @@ class LoadModel:
         ac_on：每小時冷氣運轉比例（0–1）；None 時用「有人就開、室外涼爽時不開」。
         appliance_factors：家電 id → 24 小時調整係數（0–1），例如照明調光 0.7、除濕機關閉 0。
                            必要負載不可調整。
+        neighbor_temps：相鄰房間 24 小時室溫（推演引擎反覆計算時傳入）；None 代表不計隔間熱交換。
         appliance_forced：家電 id → 24 小時手動覆寫（遙控器）；None 代表依自動規則，
                           數值為運轉比例（0 = 關、1 = 全開、0.5 = 亮度 50%），不論有沒有人都照做。
         """
@@ -426,6 +458,13 @@ class LoadModel:
         ua_open = geo.conductance_w_k(self.params, self.params["infiltration"]["natural_ventilation_ach"])
         ua_exhaust = self._exhaust_conductance(space, appliance_w)
         rated_w, rated_cop = ac_rating(ac_unit, ac) if has_ac else (0.0, ac["rated_cop"])
+        # 隔間熱交換：Σ UA_ij（W/K）與 Σ UA_ij × T_j(h)（相鄰房間室溫為已知，來自上一輪推演）
+        ua_iz, q_iz = 0.0, [0.0] * 24
+        if neighbor_temps:
+            for nid, ua in self.interzone_ua.get(space.id, {}).items():
+                if nid in neighbor_temps:
+                    ua_iz += ua
+                    q_iz = [q + ua * t for q, t in zip(q_iz, neighbor_temps[nid])]
         inf, hum = self.params["infiltration"], self.params["humidity"]
         rh_ac = inf["indoor_rh_pct"]
         # 水氣平衡：室內空氣 + 家具牆面吸放濕的緩衝，相當於 buffer 倍的空氣量（kg 乾空氣）
@@ -471,15 +510,16 @@ class LoadModel:
 
         def free_running(h: int, t_start: float) -> tuple[float, float]:
             """冷氣沒開時的室溫，一階熱響應（1R1C 模型）：
-                平衡溫度 T_eq = 室外與牆體等效溫度的平均 + 室內發熱 ÷ UA
+                平衡溫度 T_eq =（UA_外 × 室外與牆體等效溫度 + Σ UA_鄰 × 鄰房室溫 + 室內發熱）÷ UA_總
                 室溫以時間常數 τ = C ÷ UA 指數接近 T_eq（家具、牆面有熱容量，不會瞬間變溫）
             室外夠熱或適中時住戶會開窗（UA 大）；太冷時關窗；排油煙機、抽風機運轉時換氣再增加。
             回傳（這小時平均室溫, 小時結束時室溫）。"""
-            ua = (ua_open if temps[h] >= ac["natural_ventilation_below_c"] else ua_closed) + ua_exhaust[h]
+            ua_out = (ua_open if temps[h] >= ac["natural_ventilation_below_c"] else ua_closed) + ua_exhaust[h]
             base = (temps[h] + t_wall[h]) / 2
-            if ua <= 0 or capacity_kj_k <= 0:   # 沒有面積的空間（公共設備）不計室溫
+            if ua_out <= 0 or capacity_kj_k <= 0:   # 沒有面積的空間（公共設備）不計室溫
                 return base, base
-            t_eq = base + (ppl_s[h] + internal[h]) / ua
+            ua = ua_out + ua_iz                    # 相鄰房間也是一個「外界」：隔間牆的熱傳
+            t_eq = (ua_out * base + q_iz[h] + ppl_s[h] + internal[h]) / ua
             tau_h = capacity_kj_k * 1000 / ua / 3600
             decay = math.exp(-1 / tau_h)
             t_end = t_eq + (t_start - t_eq) * decay
@@ -505,19 +545,20 @@ class LoadModel:
                     pulldown = capacity_kj_k * (t_room - setpoints[h]) / 3.6  # kJ → Wh（一小時平均 W）
                 args = (geo, self.params, temps[h], rhs[h], solar[h], t_wall[h], setpoints[h],
                         ppl_s[h], ppl_l[h], internal[h], on, pulldown, vertical[h] if vertical is not None else None)
-                load = cooling_load(*args)
+                iz_w = on * (q_iz[h] - ua_iz * setpoints[h])     # 鄰房比設定溫度熱，熱量經隔間牆傳入
+                load = cooling_load(*args, interzone_w=iz_w)
                 if on > 0 and w_room > w_target:
                     # 累積的水氣（含家具牆面吸附）：冷氣先處理顯熱與穩態負載，剩下的能力才用來除濕，
                     # 沒除完的留到下一小時（實際上要數小時才會降到目標濕度）
                     cap_factor, _ = performance_factors(temps[h], indoor_wet_bulb(setpoints[h], rh_ac, ac), ac)
                     spare = max(0.0, rated_w * rated_cop * cap_factor * on - load.total)
                     latent_pulldown = min(moist_cap_kg * (w_room - w_target) * inf["h_fg"] / 3600, spare)
-                    load = cooling_load(*args, latent_pulldown)
+                    load = cooling_load(*args, latent_pulldown, interzone_w=iz_w)
                 if not has_ac or on <= 0:
                     load = CoolingLoad()  # 冷氣沒開就沒有冷房負載（只記錄耗電為 0）
                 result = ac_power(load.total, rated_w, temps[h], setpoints[h], ac, on, rated_cop, rh_ac)
                 cooling = on > 0 and load.total > 0
-                t_ac = self._cooled_room_temp(load, result, setpoints[h], t_room, ua_closed, capacity_kj_k, on) \
+                t_ac = self._cooled_room_temp(load, result, setpoints[h], t_room, ua_closed + ua_iz, capacity_kj_k, on) \
                     if cooling else t_free
                 t_room = t_ac if on >= 0.5 and cooling else t_free_end
                 w_start = w_room
@@ -531,6 +572,8 @@ class LoadModel:
                     "setpoint_c": setpoints[h] if on > 0 else None,
                     "ac_on": on,
                     "room_temp_c": t_ac if cooling else t_free,   # 使用者在這小時感受到的室溫
+                    # 這小時經隔間牆從鄰房傳入的熱（W，以實際室溫計；推演引擎用來檢查能量守恆）
+                    "interzone_w": q_iz[h] - ua_iz * (t_ac if cooling else t_free),
                     "room_rh_pct": relative_humidity(t_ac if cooling else t_free, (w_start + w_room) / 2),
                     **{f"load_{k}": v for k, v in load.as_dict().items()},
                     "load_total_w": load.total,

@@ -34,9 +34,12 @@ def test_energy_is_conserved_across_views(summer):
 def test_matches_load_model_per_space(sim, summer):
     # 推演引擎的冷氣用電要和負載模型直接算的一致（基準設定 25°C）
     weather = sim.load_model.with_solar_geometry(sim.weather.get_hourly_weather(SUMMER), SUMMER)   # 同引擎：加上方位日射
-    df = sim.load_model.space_hourly(sim.house.get_space("living_room"), weather, "weekday", 25)
+    c = summer.climate                                                       # 同引擎：鄰房室溫（隔間熱交換）
+    neighbors = {sid: list(g.sort_values("hour")["room_temp_c"]) for sid, g in c.groupby("space_id")}
+    df = sim.load_model.space_hourly(sim.house.get_space("living_room"), weather, "weekday", 25,
+                                     neighbor_temps=neighbors)
     engine = summer.records.query("space_id == 'living_room' and appliance_id == 'air_conditioner'")["kwh"].sum()
-    assert engine == pytest.approx(df["air_conditioner"].sum() / 1000)
+    assert engine == pytest.approx(df["air_conditioner"].sum() / 1000, rel=0.01)   # 引擎迭代到 0.05°C 內收斂
 
 
 def test_cost_equals_kwh_times_price(summer):
@@ -84,9 +87,14 @@ def test_room_temperature_is_physical(summer):
     c = summer.climate
     cooled = c[(c["ac_on"] >= 1) & (c["load_total_w"] > 0)]
     diff = cooled["room_temp_c"] - cooled["setpoint_c"].astype(float)
-    # 全時運轉時大多維持設定溫度；剛開機那小時蓄熱可能還沒移除完，室溫略高但不會低於設定值
+    # 剛開機那小時（前一小時沒有全時運轉）蓄熱可能還沒移除完，室溫略高（鄰房經隔間牆傳熱時可達約 1°C）；
+    # 之後持續運轉的小時都維持設定溫度；任何時候都不會低於設定值
+    prev_on = c.set_index(["space_id", "hour"])["ac_on"]
+    startup = [prev_on.get((sid, (h - 1) % 24), 0) < 1 for sid, h in zip(cooled["space_id"], cooled["hour"])]
     assert (diff.abs() < 0.01).mean() > 0.9
-    assert diff.min() > -0.01 and diff.max() < 1.0
+    assert diff.min() > -0.01
+    assert diff[[not x for x in startup]].abs().max() < 0.01
+    assert diff[startup].max() < 1.5
     # 白天沒人、冷氣關掉後，室溫因熱容量逐漸上升（不會瞬間跳到室外溫度）
     empty = c[(c["space_id"] == "master_bedroom") & (c["hour"].between(8, 15))]["room_temp_c"].tolist()
     assert empty[0] < empty[-1]
@@ -159,3 +167,14 @@ def test_month_run(sim):
     bills = month.bills()
     assert set(bills["plan_id"]) == {"tou_2", "tou_3", "progressive"}
     assert (bills["月電費"] > 0).all()
+
+
+def test_interzone_heat_is_conserved(summer):
+    # A2：隔間熱流「A 房流出 = B 房流入」，全屋加總約為 0（迭代收斂誤差內）
+    c = summer.climate
+    total = c.groupby("hour")["interzone_w"].sum().abs()
+    scale = c["interzone_w"].abs().groupby(c["hour"]).sum()
+    assert (total <= 0.05 * scale + 15).all()
+    # 開冷氣的客廳被較熱的鄰房包圍，晚上會從隔間牆得熱
+    living = c[(c["space_id"] == "living_room") & (c["ac_on"] >= 1)]
+    assert living["interzone_w"].mean() > 100

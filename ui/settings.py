@@ -93,10 +93,18 @@ def to_key(settings: dict) -> str:
     return json.dumps(settings, ensure_ascii=False, sort_keys=True)
 
 
+def adjacency(settings: dict) -> dict[tuple[str, str], float]:
+    """由平面圖算出房間相鄰關係與共用牆長（隔間熱交換用）。"""
+    from ui.floorplan import adjacency_from_layout  # floorplan 會匯入 streamlit 元件，需要時才載入
+    return adjacency_from_layout(settings, load_space_templates())
+
+
 def sim_key(settings: dict) -> str:
-    """模擬用的快取 key：排除平面圖上的圖示與房間位置（只影響畫面，不影響計算），
-    在同一房間內拖曳圖示時不必重新最佳化。"""
-    return to_key({k: v for k, v in settings.items() if k != "layout"})
+    """模擬用的快取 key：排除平面圖上的圖示與房間座標（只影響畫面），改放「相鄰關係」——
+    拖曳家電圖示、或移動房間但鄰居不變時不必重新最佳化；房間換了鄰居（隔間熱交換改變）才重算。"""
+    key = {k: v for k, v in settings.items() if k != "layout"}
+    key["_adjacency"] = sorted([*pair, length] for pair, length in adjacency(settings).items())
+    return to_key(key)
 
 
 def build_house(settings: dict) -> House:
@@ -123,7 +131,7 @@ def build_analyzer(settings: dict, params: dict | None = None) -> Analyzer:
     schedule = Schedule(house, config=settings["schedule"])
     params = copy.deepcopy(params or load_params())
     params["site"]["latitude"], params["site"]["longitude"] = location_coords(settings)   # 太陽位置用所選地區
-    load_model = LoadModel(house, schedule, params)
+    load_model = LoadModel(house, schedule, params, adjacency=adjacency(settings))   # 相鄰關係來自平面圖
     simulator = Simulator(house, schedule, load_model, weather=weather_source(settings))
     baseline = ControlPlan(name="基準（一般習慣）", default_setpoint=float(settings["baseline_setpoint_c"]))
     optimizer = Optimizer(simulator, modes_config=settings["modes"], baseline=baseline)

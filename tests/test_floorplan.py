@@ -1,4 +1,5 @@
 """智慧平面圖：格局、家電擺放、遙控器（Python 端邏輯）。"""
+import copy
 import json
 from datetime import date
 
@@ -20,7 +21,7 @@ from ui.floorplan import (
     room_dims,
     set_room_size,
 )
-from ui.settings import build_analyzer, default_settings, sim_key
+from ui.settings import adjacency, build_analyzer, default_settings, sim_key
 
 T = load_space_templates()
 DAY = date(2026, 7, 20)
@@ -73,9 +74,21 @@ def test_set_room_size_updates_area():
     assert build_analyzer(s).sim.house.get_space("master_bedroom").area_ping == pytest.approx(20 / PING_TO_M2, abs=1e-3)
 
 
-def test_layout_positions_do_not_change_simulation_key(base):
+def test_icon_positions_do_not_change_simulation_key(base):
     s, _, layout = base
-    assert sim_key(s) == sim_key(move_room({**s, "layout": layout}, layout, "kitchen", 20, 20))
+    moved = copy.deepcopy(layout)
+    for pos in moved["appliances"].values():          # 拖曳家電圖示（同一房間內）只影響畫面
+        pos["x"] += 0.3
+    assert sim_key({**s, "layout": layout}) == sim_key({**s, "layout": moved})
+
+
+def test_room_neighbours_change_simulation_key(base):
+    # A2 隔間熱交換：房間換了鄰居會影響室溫，必須重新計算；鄰居不變則不重算
+    s, _, layout = base
+    s = {**s, "layout": layout}
+    far = move_room(s, layout, "kitchen", 20, 20)
+    assert sim_key(s) != sim_key(far)
+    assert ("kitchen", "living_room") not in adjacency(far)
 
 
 # ---------- 家電擺放 ----------
