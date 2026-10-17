@@ -24,7 +24,7 @@ import pandas as pd
 
 from core.models import Appliance, House, LoadType, Space
 from core.schedule import Schedule
-from core.solar import hourly_vertical
+from core.solar import hourly_vertical_many
 
 CONFIG_DIR = Path(__file__).resolve().parent.parent / "config"
 MJ_PER_HOUR_TO_W = 1e6 / 3600        # 每小時日射量 MJ/m² → 平均日射強度 W/m²
@@ -307,6 +307,7 @@ class LoadModel:
         self.awake = set(schedule.activities) - NOT_AWAKE
         self._people_cache: dict[tuple, tuple[list[float], list[float]]] = {}
         self._prep_cache: dict[tuple, tuple] = {}
+        self._solar_cache: dict[tuple, dict[str, list[float]]] = {}
         # 有設定能力（kW）與能效等級的冷氣：額定耗電由能力 ÷ COP 推得，讓介面與排程顯示一致
         for _, a in house.all_appliances():
             if a.id == "air_conditioner" and a.capacity_kw:
@@ -316,6 +317,7 @@ class LoadModel:
         """傳給其他程序平行計算時不帶快取（快取很大，到了另一邊會重新建立）。"""
         state = self.__dict__.copy()
         state["_prep_cache"] = {}
+        state["_solar_cache"] = {}
         return state
 
     # ----- 方位日射 -----
@@ -324,12 +326,19 @@ class LoadModel:
         """加上各方位垂直面日射欄位 vert_<方位>（W/m²），vert_avg 為四面平均（未指定方位的空間）。
         推演引擎與最佳化都先呼叫這裡，兩邊用同一份日射。"""
         site = self.params["site"]
-        ghi = [x * MJ_PER_HOUR_TO_W for x in weather.solar_mj_m2]
-        out = weather.copy()
-        for o in [None, *sorted({s.orientation for s in self.house.spaces if s.orientation})]:
-            out[f"vert_{o or 'avg'}"] = hourly_vertical(day, ghi, site["latitude"], site["longitude"], o,
-                                                        site["timezone_h"], site["ground_albedo"])
-        return out
+        orientations = [None, *sorted({s.orientation for s in self.house.spaces if s.orientation})]
+        solar = tuple(weather.solar_mj_m2)
+        key = (day, solar, tuple(o or "" for o in orientations), site["latitude"], site["longitude"])
+        columns = self._solar_cache.get(key)
+        if columns is None:   # 同一天的太陽位置與日射只算一次（最佳化與推演會對同一天呼叫很多次）
+            ghi = [x * MJ_PER_HOUR_TO_W for x in solar]
+            many = hourly_vertical_many(day, ghi, site["latitude"], site["longitude"], orientations,
+                                        site["timezone_h"], site["ground_albedo"])
+            columns = {f"vert_{o or 'avg'}": many[o] for o in orientations}
+            if len(self._solar_cache) > 1024:
+                self._solar_cache.clear()
+            self._solar_cache[key] = columns
+        return weather.assign(**columns)
 
     # ----- 人體發熱 -----
 

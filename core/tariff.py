@@ -32,6 +32,7 @@ class Tariff:
         self.source = self.config["source"]
         self.plans = self.config["plans"]
         self._warned_years: set[int] = set()
+        self._price_cache: dict[tuple, pd.DataFrame] = {}
         self._validate()
 
     def _validate(self) -> None:
@@ -74,7 +75,13 @@ class Tariff:
 
     def hourly_prices(self, day: date, plan_id: str = "tou_2") -> pd.DataFrame:
         """回傳 24 列：hour、period（尖峰/半尖峰/離峰/不分時段）、price（元/度）。
-        累進電價各時段相同，以邊際電價表示。"""
+        累進電價各時段相同，以邊際電價表示。同一天同一方案只算一次（回傳複本，呼叫端可以修改）。"""
+        key = (day, plan_id)
+        if key not in self._price_cache:
+            self._price_cache[key] = self._hourly_prices(day, plan_id)
+        return self._price_cache[key].copy()
+
+    def _hourly_prices(self, day: date, plan_id: str) -> pd.DataFrame:
         plan = self.plans[plan_id]
         if plan["type"] == "progressive":
             rate = self.marginal_progressive_rate(day)

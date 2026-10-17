@@ -82,10 +82,23 @@ def hourly_vertical(day: date, ghi_w_m2: list[float], lat: float, lon: float, or
                     tz_h: float = 8.0, albedo: float = 0.2) -> list[float]:
     """24 小時某方位垂直面的平均日射（W/m²）。每小時取該小時中點（h + 0.5）的太陽位置。
     orientation 為 None（未指定方位）時，取東南西北四面的平均。"""
-    facings = [ORIENTATIONS[orientation]] if orientation else [0, 90, 180, 270]
-    result = []
+    return hourly_vertical_many(day, ghi_w_m2, lat, lon, [orientation], tz_h, albedo)[orientation]
+
+
+def hourly_vertical_many(day: date, ghi_w_m2: list[float], lat: float, lon: float, orientations: list[str | None],
+                         tz_h: float = 8.0, albedo: float = 0.2) -> dict[str | None, list[float]]:
+    """一次算多個方位：同一小時的太陽位置、直射散射分離只算一次，再套用到各方位（比逐方位計算快數倍）。"""
+    facing_sets = {o: [ORIENTATIONS[o]] if o else [0, 90, 180, 270] for o in orientations}
+    unique = sorted({f for fs in facing_sets.values() for f in fs})
+    result: dict[str | None, list[float]] = {o: [] for o in orientations}
     for h, ghi in enumerate(ghi_w_m2):
+        if ghi <= 0:
+            for o in orientations:
+                result[o].append(0.0)
+            continue
         alt, az = solar_position(day, h + 0.5, lat, lon, tz_h)
         g0h = extraterrestrial_horizontal(day, alt)
-        result.append(sum(vertical_irradiance(ghi, alt, az, g0h, f, albedo) for f in facings) / len(facings))
+        per_facing = {f: vertical_irradiance(ghi, alt, az, g0h, f, albedo) for f in unique}
+        for o, fs in facing_sets.items():
+            result[o].append(sum(per_facing[f] for f in fs) / len(fs))
     return result

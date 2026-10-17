@@ -135,9 +135,11 @@ def month_profile(_analyzer: Analyzer, settings_key: str, year: int, month: int,
     src = usage.source_month(year, month, months, _analyzer.sim.tariff)
     if src is None:
         return {"by_date": {}, "mean": {}, "appliance": {}, "hourly": {}}, None
-    prof = usage.simulate_month(_analyzer, src[0], src[1], plan_id, dates)
-    if src != (year, month):
-        prof = {**prof, "by_date": {}}      # 代替月份只用平日／假日平均
+    proxy = src != (year, month)
+    # 代替月份只用平日／假日平均，每 2 天取樣一天就夠（雲端單核心主機上預測頁快一倍）
+    prof = usage.simulate_month(_analyzer, src[0], src[1], plan_id, dates, step=2 if proxy else 1)
+    if proxy:
+        prof = {**prof, "by_date": {}}
     return prof, src
 
 

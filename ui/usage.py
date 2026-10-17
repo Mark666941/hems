@@ -63,20 +63,17 @@ def simulate_month(analyzer: Analyzer, year: int, month: int, plan_id: str,
           "appliance": {日別: {"空間id/家電id": kWh}}, "hourly": {日別: [24 小時平均 kWh]}}
     """
     by_date, rows, appl, hourly = {}, [], [], []
-    plan = analyzer.opt.baseline_plan
-    for d in range(1, calendar.monthrange(year, month)[1] + 1, step):
-        day = date(year, month, d)
-        if day not in available:
+    days = [date(year, month, d) for d in range(1, calendar.monthrange(year, month)[1] + 1, step)
+            if date(year, month, d) in available]
+    # 一個月約 0.7 秒，平行的程序啟動成本比省下的時間多，逐日計算即可
+    for summary in (_day_summary(d, analyzer.sim, plan_id, analyzer.opt.baseline_plan) for d in days):
+        if summary is None:         # 該日逐時資料不完整
             continue
-        try:
-            r = analyzer.sim.run(day, plan_id, plan)
-        except ValueError:          # 該日逐時資料不完整
-            continue
-        by_date[day] = {"kwh": r.total_kwh, "cost": r.energy_cost}
-        rows.append({"day_type": r.day_type, "kwh": r.total_kwh, "cost": r.energy_cost})
-        a = r.records.groupby(["space_id", "appliance_id"])["kwh"].sum()
-        appl.append({"day_type": r.day_type, **{f"{s}/{i}": v for (s, i), v in a.items()}})
-        hourly.append({"day_type": r.day_type, **{h: float(v) for h, v in enumerate(r.hourly["kwh"])}})
+        day, day_type, kwh, cost, a, h = summary
+        by_date[day] = {"kwh": kwh, "cost": cost}
+        rows.append({"day_type": day_type, "kwh": kwh, "cost": cost})
+        appl.append({"day_type": day_type, **a})
+        hourly.append({"day_type": day_type, **{i: v for i, v in enumerate(h)}})
     if not rows:
         return {"by_date": {}, "mean": {}, "appliance": {}, "hourly": {}}
     df = pd.DataFrame(rows)
@@ -94,6 +91,18 @@ def simulate_month(analyzer: Analyzer, year: int, month: int, plan_id: str,
         h = hourly_mean.loc[t] if t in hourly_mean.index else hourly_df.drop(columns="day_type").mean()
         out_hourly[t] = [float(h[i]) for i in range(24)]
     return {"by_date": by_date, "mean": out_mean, "appliance": out_appl, "hourly": out_hourly}
+
+
+def _day_summary(day: date, sim, plan_id: str, plan) -> tuple | None:
+    """一天的推演概況：
+    （日期, 日別, 用電, 電費, {空間/家電: kWh}, 24 小時用電）。"""
+    try:
+        r = sim.run(day, plan_id, plan)
+    except ValueError:
+        return None
+    a = r.records.groupby(["space_id", "appliance_id"])["kwh"].sum()
+    return (day, r.day_type, r.total_kwh, r.energy_cost, {f"{s}/{i}": float(v) for (s, i), v in a.items()},
+            [float(v) for v in r.hourly["kwh"]])
 
 
 def source_month(year: int, month: int, months: list[tuple[int, int]], tariff: Tariff) -> tuple[int, int] | None:

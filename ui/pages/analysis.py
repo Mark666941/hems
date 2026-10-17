@@ -163,7 +163,7 @@ def _whatif(ctx: AppContext) -> None:
         best = table.iloc[0]
         c[2].metric("最划算", best["情境"], f"使用年限內淨效益 {best['使用年限內淨效益(元)']:,.0f} 元")
         st.altair_chart(charts.whatif_bars(table), width="stretch")
-        show = table.drop(columns=["id"]).assign(結論=[whatif.verdict(r) for _, r in table.iterrows()])
+        show = table.drop(columns=["id"])
         st.dataframe(show, hide_index=True, width="stretch", column_config={
             "年用電(kWh)": st.column_config.NumberColumn(format="%.0f"),
             "年電費(元)": st.column_config.NumberColumn(format="%.0f"),
@@ -172,6 +172,8 @@ def _whatif(ctx: AppContext) -> None:
             "投資(元)": st.column_config.NumberColumn(format="%.0f"),
             "回收年限(年)": st.column_config.NumberColumn(format="%.1f"),
             "使用年限內淨效益(元)": st.column_config.NumberColumn(format="%.0f")})
+        # 結論是一整句話，放在表格欄位會被截斷，改成條列在表格下方
+        st.markdown("\n".join(f"- **{r['情境']}**：{whatif.verdict(r)}" for _, r in table.iterrows()))
     proxy = [str(m) for m in current.loc[current["proxy"], "month"]]
     st.caption("一年以每月取樣推演估算；" + (f"{'、'.join(proxy)} 月尚無天氣資料，用最接近月份的天氣、該月電價計算。"
                                          if proxy else "") + "電費依所選方案的月電費計算（含基本電費與累進級距）。")
