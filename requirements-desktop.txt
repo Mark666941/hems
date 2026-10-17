@@ -1,3 +1,5 @@
 # 桌面視窗版（python run_app.py）額外需要的套件；網頁部署不需要
 -r requirements.txt
 pywebview>=5.0
+# 製作 Windows 安裝程式（packaging/build_installer.py）才需要
+pyinstaller>=6.10

@@ -61,6 +61,7 @@ hems/
 │                      #   floorplan.py + floorplan_frontend/（智慧平面圖自訂元件：拖曳家電、遙控器）、
 │                      #   pages/（home 首頁、plan 平面圖、analysis 分析、forecast 預測、settings 設定、about 說明）
 ├── .streamlit/        # Streamlit 主題設定
+├── packaging/         # Windows 安裝程式：hems.spec（PyInstaller）、hems_installer.iss（Inno Setup）、build_installer.py
 ├── docs/developer_guide.md # 程式文件：執行流程、模組地圖、常見修改、錯誤記錄、測試
 ├── docs/images/       # 里程碑圖表（README 用）
 ├── docs/reports/      # 整月分析報告範例（Markdown）
@@ -160,7 +161,7 @@ hems/
 - [x] 15. D4 錯誤處理與記錄、D5 程式文件（夜間）
 - [x] 16. E2 示範帳號與示範資料（夜間）
 - [x] 17. A2 房間之間的熱交換（RC 熱網路，相鄰關係來自平面圖）（白天工作負責：改 core）
-- [ ] 18. E3 Windows 安裝程式（PyInstaller）（白天工作負責：需安裝套件）
+- [x] 18. E3 Windows 安裝程式（PyInstaller + Inno Setup，python packaging/build_installer.py → build/installer/HEMS-Setup-版本.exe）
 - 不做：B5 太陽能與儲能、E4 自訂網址
 - 暫不做／未來：A1 暖氣、B4 真實智慧插座
 - README 由白天工作撰寫；備審資料由作者自行製作，不在本專案範圍

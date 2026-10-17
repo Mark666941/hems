@@ -102,6 +102,10 @@ python -m venv .venv
 pip install -r requirements-desktop.txt
 ```
 
+**不想安裝 Python？** 使用 Windows 安裝程式 `HEMS-Setup-1.0.0.exe`（約 90 MB），雙擊安裝即可
+（不需要系統管理員權限；資料存在 `%LOCALAPPDATA%\HEMS`，解除安裝時保留）。
+自行製作安裝程式：`pip install pyinstaller`、`winget install JRSoftware.InnoSetup`，再執行 `python packaging/build_installer.py`。
+
 開啟方式（擇一）：
 
 | 方式 | 指令 |

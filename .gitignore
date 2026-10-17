@@ -21,3 +21,6 @@ output/
 data/user/
 # Open-Meteo 天氣快取（可隨時重新下載）
 data/weather/openmeteo/
+# PyInstaller／Inno Setup 產物（python packaging/build_installer.py 重新產生）
+build/
+build_log.txt

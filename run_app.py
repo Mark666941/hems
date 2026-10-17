@@ -15,6 +15,8 @@
 from __future__ import annotations
 
 import argparse
+import multiprocessing
+import os
 import socket
 import subprocess
 import sys
@@ -24,10 +26,22 @@ import urllib.request
 import webbrowser
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent
 TITLE = "HEMS 居家能源管理系統"
-LOG_PATH = ROOT / "output" / "hems_app.log"
-HAS_CONSOLE = sys.stdout is not None   # pythonw 啟動時沒有命令視窗，stdout 為 None
+FROZEN = getattr(sys, "frozen", False)  # 由 PyInstaller 打包成 HEMS.exe（Windows 安裝程式，E3）
+if FROZEN:
+    # 程式檔在安裝資料夾（一般使用者不能寫入），使用者資料放 %LOCALAPPDATA%\HEMS：
+    # 資料庫、錯誤記錄、Open-Meteo 天氣快取、伺服器訊息。用 setdefault 讓測試可以另外指定。
+    ROOT = Path(sys._MEIPASS)
+    USER_DIR = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "HEMS"
+    USER_DIR.mkdir(parents=True, exist_ok=True)
+    os.environ.setdefault("HEMS_DATABASE_URL", f"sqlite:///{(USER_DIR / 'hems.db').as_posix()}")
+    os.environ.setdefault("HEMS_LOG_DIR", str(USER_DIR / "logs"))
+    os.environ.setdefault("HEMS_WEATHER_CACHE", str(USER_DIR / "weather"))
+    LOG_PATH = USER_DIR / "hems_app.log"
+else:
+    ROOT = Path(__file__).resolve().parent
+    LOG_PATH = ROOT / "output" / "hems_app.log"
+HAS_CONSOLE = sys.stdout is not None   # pythonw 或打包的視窗程式沒有命令視窗，stdout 為 None
 
 LOADING_HTML = """<!doctype html><html><head><meta charset="utf-8"><style>
 body{margin:0;height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;
@@ -75,13 +89,29 @@ def start_server(port: int) -> subprocess.Popen:
     if not HAS_CONSOLE:                      # 沒有命令視窗：伺服器訊息寫入記錄檔
         LOG_PATH.parent.mkdir(exist_ok=True)
         output = open(LOG_PATH, "w", encoding="utf-8")   # noqa: SIM115 伺服器執行期間都要寫入，不能用 with 關閉
+    # 打包版沒有 python 指令可用：用 HEMS.exe 自己加上 --serve 參數開出伺服器程序
+    command = [sys.executable, "--serve", str(port)] if FROZEN else         [sys.executable, "-m", "streamlit", "run", str(ROOT / "app.py"), *streamlit_flags(port)]
     return subprocess.Popen(
-        [sys.executable, "-m", "streamlit", "run", str(ROOT / "app.py"),
-         "--server.port", str(port), "--server.address", "localhost",   # 只接受本機連線
-         "--server.headless", "true", "--browser.gatherUsageStats", "false"],
+        command,
         cwd=ROOT, stdout=output, stderr=subprocess.STDOUT if output else None,
         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if not HAS_CONSOLE else 0,
     )
+
+
+def streamlit_flags(port: int) -> list[str]:
+    return ["--server.port", str(port), "--server.address", "localhost",   # 只接受本機連線
+            "--server.headless", "true", "--browser.gatherUsageStats", "false"]
+
+
+def serve(port: int) -> None:
+    """打包版的伺服器程序（HEMS.exe --serve 連接埠）：在這個程序內執行 Streamlit。"""
+    if sys.stdout is None:                   # 視窗程式沒有標準輸出：Streamlit 的訊息寫到記錄檔
+        sys.stdout = sys.stderr = open(LOG_PATH, "a", encoding="utf-8", buffering=1)  # noqa: SIM115
+    os.chdir(ROOT)                           # 讀取 .streamlit/config.toml（主題）
+    from streamlit.web import cli as stcli
+    sys.argv = ["streamlit", "run", str(ROOT / "app.py"), *streamlit_flags(port),
+                "--global.developmentMode", "false"]   # 打包後 Streamlit 會誤判為開發模式
+    sys.exit(stcli.main())
 
 
 def stop_server(server: subprocess.Popen) -> None:
@@ -112,7 +142,11 @@ def run_window(url: str, server: subprocess.Popen) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=TITLE)
     parser.add_argument("--browser", action="store_true", help="用瀏覽器開啟，而不是桌面視窗")
+    parser.add_argument("--serve", type=int, metavar="PORT", help=argparse.SUPPRESS)   # 打包版內部使用
     args = parser.parse_args()
+    if args.serve:
+        serve(args.serve)
+        return
 
     port = free_port()
     url = f"http://localhost:{port}"
@@ -143,4 +177,5 @@ def main() -> None:
 
 
 if __name__ == "__main__":
+    multiprocessing.freeze_support()         # 打包版：多核心平行計算的子程序由這裡接手，不會再開一個視窗
     main()

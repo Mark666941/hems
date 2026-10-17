@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import calendar
 import json
+import os
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -94,10 +95,11 @@ class OpenMeteoWeatherSource(WeatherSource):
     ARCHIVE_LAG_DAYS = 5
     FORECAST_DAYS = 7
 
-    def __init__(self, latitude: float, longitude: float, cache_dir: Path = WEATHER_DIR / "openmeteo",
+    def __init__(self, latitude: float, longitude: float, cache_dir: Path | None = None,
                  fetch=_http_json, today: date | None = None, forecast_ttl_h: float = 3.0):
         self.lat, self.lon = round(latitude, 3), round(longitude, 3)
-        self.cache_dir = cache_dir
+        # 快取資料夾：參數 > 環境變數 HEMS_WEATHER_CACHE（安裝版放使用者資料夾）> data/weather/openmeteo
+        self.cache_dir = cache_dir or Path(os.environ.get("HEMS_WEATHER_CACHE") or WEATHER_DIR / "openmeteo")
         self.fetch = fetch                   # 測試時換成假的下載函式
         self.today = today
         self.ttl_h = forecast_ttl_h
