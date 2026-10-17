@@ -10,8 +10,11 @@ from __future__ import annotations
 import logging
 import multiprocessing
 import os
+import sys
+import types
 from collections.abc import Callable
 from concurrent.futures import ProcessPoolExecutor
+from contextlib import contextmanager
 from pathlib import Path
 
 log = logging.getLogger("hems.parallel")
@@ -63,6 +66,30 @@ def _pool() -> ProcessPoolExecutor:
     return _POOL
 
 
+@contextmanager
+def _plain_main():
+    """在 Streamlit 伺服器裡開子程序時，暫時把主程式換成空模組。
+
+    Windows（spawn）開子程序時會重新執行「主程式」準備環境；Streamlit 把 app.py 登記為主程式，
+    結果每個計算子程序都把整個網頁程式跑一遍（載入設定檔、建立模型、自動存檔），浪費時間、記憶體，
+    也可能同時寫入資料庫。計算函式都在 core/ 的模組裡，子程序不需要主程式。
+    命令列腳本不受影響（它們的平行函式可能定義在腳本本身，子程序需要載入主程式）。"""
+    try:
+        from streamlit import runtime
+        in_streamlit = runtime.exists()
+    except ImportError:
+        in_streamlit = False
+    main = sys.modules.get("__main__")
+    if not in_streamlit or main is None:
+        yield
+        return
+    sys.modules["__main__"] = types.ModuleType("__main__")
+    try:
+        yield
+    finally:
+        sys.modules["__main__"] = main
+
+
 def parallel_map(fn: Callable, items, *args) -> list:
     """回傳 [fn(item, *args) for item in items]，依 items 順序。fn 必須是模組層級的函式（才能傳給其他程序）。"""
     global _POOL
@@ -70,7 +97,8 @@ def parallel_map(fn: Callable, items, *args) -> list:
     if worker_count() <= 1 or len(items) <= 1:
         return [fn(item, *args) for item in items]
     try:
-        futures = [_pool().submit(fn, item, *args) for item in items]
+        with _plain_main():
+            futures = [_pool().submit(fn, item, *args) for item in items]
         return [f.result() for f in futures]
     except Exception as e:   # noqa: BLE001
         # 無法傳給其他程序（Python 3.11 序列化區域函式丟 AttributeError、3.14 丟 PicklingError）、

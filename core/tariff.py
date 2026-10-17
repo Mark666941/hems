@@ -45,9 +45,6 @@ class Tariff:
                     if hours != list(range(24)):
                         raise ValueError(f"{pid} {season} {day_type} 的時段沒有剛好涵蓋 24 小時")
 
-    def plan_names(self) -> dict[str, str]:
-        return {pid: p["name"] for pid, p in self.plans.items()}
-
     def is_summer(self, day: date) -> bool:
         return day.month in self.config["summer_months"]
 

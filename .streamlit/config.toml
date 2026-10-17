@@ -20,3 +20,7 @@ borderColor = "#22314d"
 
 [server]
 headless = true
+
+[client]
+# 隱藏右上角 Streamlit 開發者用的「Deploy」按鈕，只保留選單（切換亮暗色、重新整理等）
+toolbarMode = "minimal"

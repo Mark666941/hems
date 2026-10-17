@@ -36,7 +36,9 @@ def get_analyzer(settings_key: str) -> Analyzer:
 @st.cache_data(max_entries=16, show_spinner="四種模式最佳化中…")
 def compare_day(_analyzer: Analyzer, settings_key: str, day: date, plan_id: str):
     table, results = _analyzer.compare_day(day, plan_id)
-    sims = {BASELINE if k == "基準" else _analyzer.opt.modes[k].name: (r if isinstance(r, SimulationResult) else r.result)
+    # 最佳化結果包著推演結果（.result）；基準直接是推演結果。用屬性判斷而不用 isinstance：
+    # 開發時 Streamlit 重新載入模組後，快取裡舊物件的類別和新類別不同，isinstance 會誤判
+    sims = {BASELINE if k == "基準" else _analyzer.opt.modes[k].name: getattr(r, "result", r)
             for k, r in results.items()}
     return table, sims
 
