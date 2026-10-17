@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from core.data_source import CwaCsvWeatherSource, OpenMeteoWeatherSource, WeatherSource
 from core.load_model import LoadModel, load_params
 from core.metrics import Analyzer
 from core.models import House, house_from_config, load_appliance_catalog, load_space_templates
@@ -37,7 +38,54 @@ def default_settings() -> dict:
         "schedule": _read("schedule.json"),
         "modes": _read("modes.json"),
         "baseline_setpoint_c": baseline.default_setpoint,
+        "location": dict(DEFAULT_LOCATION),
     }
+
+
+# ---------- 地區與天氣（第 6b 批） ----------
+
+DEFAULT_LOCATION = {"source": "cwa", "county": "臺中市", "town": "北區"}   # 中央氣象署臺中測站位於臺中市北區
+WEATHER_SOURCES = {"cwa": "中央氣象署臺中測站（實測，離線可用）",
+                   "openmeteo": "Open-Meteo（選擇地區、含未來 7 天預報，需要網路）"}
+_TOWNS: dict | None = None
+
+
+def load_towns() -> dict[str, dict[str, list[float]]]:
+    """縣市 → 鄉鎮市區 → [緯度, 經度]（內政部鄉鎮市區界線算出的中心點，config/towns.json）。"""
+    global _TOWNS
+    if _TOWNS is None:
+        _TOWNS = _read("towns.json")["towns"]
+    return _TOWNS
+
+
+def location_of(settings: dict) -> dict:
+    """設定中的地區（舊設定檔沒有時用預設：臺中測站）。"""
+    return {**DEFAULT_LOCATION, **settings.get("location", {})}
+
+
+def location_key(settings: dict) -> str:
+    return json.dumps(location_of(settings), ensure_ascii=False, sort_keys=True)
+
+
+def location_coords(settings: dict) -> tuple[float, float]:
+    loc = location_of(settings)
+    lat, lon = load_towns()[loc["county"]][loc["town"]]
+    return lat, lon
+
+
+def location_label(settings: dict) -> str:
+    """畫面上的地區標示，例如「臺中市｜中央氣象署臺中測站」「臺北市大安區｜Open-Meteo」。"""
+    loc = location_of(settings)
+    if loc["source"] == "cwa":
+        return "臺中市｜中央氣象署臺中測站"
+    return f"{loc['county']}{loc['town']}｜Open-Meteo"
+
+
+def weather_source(settings: dict) -> WeatherSource:
+    loc = location_of(settings)
+    if loc["source"] == "openmeteo":
+        return OpenMeteoWeatherSource(*location_coords(settings))
+    return CwaCsvWeatherSource()
 
 
 def to_key(settings: dict) -> str:
@@ -73,8 +121,10 @@ def build_analyzer(settings: dict, params: dict | None = None) -> Analyzer:
     params：負載模型參數（預設讀 config/load_params.json；情境比較用來換冷氣 COP、熱水器效率）。"""
     house = build_house(settings)
     schedule = Schedule(house, config=settings["schedule"])
-    load_model = LoadModel(house, schedule, params or load_params())
-    simulator = Simulator(house, schedule, load_model)
+    params = copy.deepcopy(params or load_params())
+    params["site"]["latitude"], params["site"]["longitude"] = location_coords(settings)   # 太陽位置用所選地區
+    load_model = LoadModel(house, schedule, params)
+    simulator = Simulator(house, schedule, load_model, weather=weather_source(settings))
     baseline = ControlPlan(name="基準（一般習慣）", default_setpoint=float(settings["baseline_setpoint_c"]))
     optimizer = Optimizer(simulator, modes_config=settings["modes"], baseline=baseline)
     return Analyzer(optimizer)

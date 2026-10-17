@@ -27,7 +27,7 @@ def _status(ctx: AppContext, h: int, cumulative: bool = False) -> dict:
     upto = hourly.loc[:h] if cumulative else hourly
     return {
         "date": str(ctx.day), "weekday": f"{ctx.weekday}・{ctx.day_type}", "time": f"{h:02d}:00",
-        "location": "臺中市｜中央氣象署臺中測站", "outdoor_temp": float(hourly.loc[h, "temp_c"]),
+        "location": ctx.location_label, "outdoor_temp": float(hourly.loc[h, "temp_c"]),
         "rh": float(hourly.loc[h, "rh_pct"]), "house_kw": float(hourly.loc[h, "kwh"]),
         "period": hourly.loc[h, "period_label"], "price": float(hourly.loc[h, "price"]),
         "today_kwh": float(upto["kwh"].sum()), "today_cost": float(upto["cost"].sum()),

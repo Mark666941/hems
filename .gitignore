@@ -19,3 +19,5 @@ Thumbs.db
 output/
 # 使用者資料庫（帳號與設定檔，不進 git）
 data/user/
+# Open-Meteo 天氣快取（可隨時重新下載）
+data/weather/openmeteo/

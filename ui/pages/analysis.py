@@ -6,6 +6,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
+from core.data_source import full_months
 from ui import anomaly, charts, insights, whatif
 from ui.context import BASELINE, AppContext, analyze_month, annual_scenario, meter_comparison, month_pdf
 from ui.theme import page_header, tips_card
@@ -224,9 +225,10 @@ def _anomaly(ctx: AppContext) -> None:
 
 
 def _month(ctx: AppContext) -> None:
-    months = sorted({(d.year, d.month) for d in ctx.dates})
+    months = full_months(ctx.dates)          # 只列每天都有天氣資料的完整月份
     c1, c2 = st.columns([1, 3])
-    ym = c1.selectbox("月份", months, index=months.index((ctx.day.year, ctx.day.month)),
+    current = (ctx.day.year, ctx.day.month)
+    ym = c1.selectbox("月份", months, index=months.index(current) if current in months else len(months) - 1,
                       format_func=lambda x: f"{x[0]} 年 {x[1]} 月")
     c2.caption("整月分析會對每一天、每個模式各做一次最佳化，畫出每日用電、累積電費、溫度與冷氣用電的關係，"
                "並比較三種電價方案的月電費。")

@@ -5,7 +5,7 @@
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 
 import streamlit as st
 
@@ -60,7 +60,7 @@ def render(ctx: AppContext) -> None:
     page_header("HOME · 家中此刻", ctx.house.name, [
         (f"📅 <b>{ctx.day}</b> {ctx.weekday}・{ctx.day_type}", ""),
         (f"🕑 模擬時間 <b>{h:02d}:00</b>", ""),
-        ("📍 臺中市", ""),
+        (f"📍 {ctx.location_label.split('｜')[0]}", ""),
         (f"🌡️ 室外 <b>{hourly.loc[h, 'temp_c']:.1f}°C</b>・{hourly.loc[h, 'rh_pct']:.0f}%", ""),
         (f"⚡ {period} <b>{price:.2f}</b> 元/度", "peak" if period in ("尖峰", "半尖峰") else "off"),
     ])
@@ -130,7 +130,13 @@ def render(ctx: AppContext) -> None:
         st.caption(st.session_state.pop("_now_hint"))
 
 
-def back_to_now() -> None:
-    """「回到現在」：模擬時間設為現在的小時（天氣資料只到 2026 年 9 月，日期維持目前選擇）。"""
+def back_to_now(live: bool = False) -> None:
+    """「回到現在」：模擬時間設為現在的小時；使用 Open-Meteo 即時天氣時，日期也改為今天。
+    中央氣象署測站資料只到 2026 年 9 月，日期維持目前選擇。"""
     st.session_state.ui["hour"] = datetime.now().hour
-    st.session_state["_now_hint"] = "已回到現在的時刻。目前天氣資料只到 2026 年 9 月，接上即時天氣後日期也會同步到今天。"
+    if live:
+        st.session_state.ui.update(preset="自選日期", custom_day=date.today())
+        st.session_state["_now_hint"] = "已回到現在（今天的即時天氣）。"
+    else:
+        st.session_state["_now_hint"] = ("已回到現在的時刻。臺中測站資料只到 2026 年 9 月；"
+                                         "到左側「📍 地區與天氣」改用 Open-Meteo，日期也會同步到今天。")

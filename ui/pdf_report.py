@@ -135,7 +135,8 @@ def _charts_page(pdf: PdfPages, daily: pd.DataFrame, title: str) -> None:
 
 
 def month_report_pdf(year: int, month: int, house_name: str, plan_name: str, mtable: pd.DataFrame,
-                     recs: list, daily: pd.DataFrame, insights: list[Insight]) -> bytes:
+                     recs: list, daily: pd.DataFrame, insights: list[Insight],
+                     weather_label: str = "中央氣象署臺中測站") -> bytes:
     """產生整月分析報告 PDF，回傳檔案內容（bytes）。"""
     buf = io.BytesIO()
     plan_col = f"{plan_name}(元)"
@@ -163,7 +164,7 @@ def month_report_pdf(year: int, month: int, house_name: str, plan_name: str, mta
             if r.note:
                 text.line(f"※ {r.note}", 9, "#898781")
             text.y -= 0.008
-        text.line("說明：以中央氣象署臺中測站逐時資料推演；每個模式每天各自最佳化。"
+        text.line(f"說明：以{weather_label}逐時天氣推演；每個模式每天各自最佳化。"
                   "流動電費依逐時電價計算，月電費含基本電費與累進級距。", 8.5, "#898781")
         text.close()
     return buf.getvalue()

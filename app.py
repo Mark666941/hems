@@ -12,11 +12,11 @@ from __future__ import annotations
 
 import copy
 import json
-from datetime import datetime
+from datetime import date, datetime
 
 import streamlit as st
 
-from core.data_source import load_representative_days
+from core.data_source import WeatherUnavailable, load_representative_days
 from core.models import load_space_templates
 from core.optimizer import MODE_ORDER, ModeSchedule
 from ui import charts
@@ -35,7 +35,16 @@ from ui.family import apply_person_overrides
 from ui.floorplan import ensure_layout, room_dims, set_room_size
 from ui.logs import get_logger, guarded
 from ui.pages import about, analysis, forecast, home, plan, settings as settings_page
-from ui.settings import default_settings, sim_key
+from ui.settings import (
+    WEATHER_SOURCES,
+    default_settings,
+    load_towns,
+    location_key,
+    location_label,
+    location_of,
+    sim_key,
+    weather_source,
+)
 from ui.theme import apply_theme
 from ui.wizard import open_wizard, show_wizard_if_open
 
@@ -44,7 +53,6 @@ apply_theme()
 
 # ---------- 狀態 ----------
 
-dates = available_dates()
 rep = load_representative_days()
 DEFAULT_UI = {
     "preset": "夏季代表日", "custom_day": rep["summer"], "hour": datetime.now().hour, "plan_id": "tou_2",
@@ -56,6 +64,9 @@ DEFAULT_UI = {
 store = ensure_session(DEFAULT_UI)
 settings: dict = st.session_state.settings
 ui: dict = st.session_state.ui
+location = location_of(settings)
+live_weather = location["source"] == "openmeteo"
+dates = available_dates(location_key(settings))
 
 try:
     analyzer = get_analyzer(sim_key(settings))
@@ -74,6 +85,21 @@ layout = ensure_layout(settings, house, templates)
 cfg_by_id = {s["id"]: s for s in settings["house"]["spaces"]}
 
 day = {"夏季代表日": rep["summer"], "冬季代表日": rep["winter"]}.get(ui["preset"], ui["custom_day"])
+if day not in set(dates):   # 換天氣來源後，原本選的日期可能沒有資料（例如今天只有 Open-Meteo 有）
+    day = min(dates, key=lambda d: abs((d - day).days))
+    st.session_state.ui.update(preset="自選日期", custom_day=day)
+    st.toast(f"所選天氣來源沒有原本日期的資料，已改為 {day}", icon="📅")
+try:   # Open-Meteo 需要網路：先確認這一天取得到天氣，取不到就提示並提供改回測站資料
+    analyzer.sim.weather.get_hourly_weather(day)
+except WeatherUnavailable as e:
+    get_logger("app").warning("天氣取得失敗：%s", e)
+    st.error(str(e))
+    if st.button("改用中央氣象署臺中測站資料"):
+        new = copy.deepcopy(settings)
+        new["location"] = {**location, "source": "cwa"}
+        update_settings(new, "已改用中央氣象署臺中測站資料")
+        st.rerun()
+    st.stop()
 sim_hour = int(ui["hour"])
 plan_id = ui["plan_id"]
 day_type = "假日" if tariff.is_off_peak_day(day) else "平日"
@@ -104,14 +130,51 @@ def apply_ui(**changes) -> None:
 @st.dialog("📅 日期與時間")
 def dialog_datetime() -> None:
     preset = st.segmented_control("日期", ["夏季代表日", "冬季代表日", "自選日期"], default=ui["preset"])
-    custom = ui["custom_day"]
+    custom = min(max(ui["custom_day"], dates[0]), dates[-1])
     if preset == "自選日期":
-        custom = st.date_input("選擇日期", value=ui["custom_day"], min_value=dates[0], max_value=dates[-1])
-    st.caption("代表日：該月份中氣溫最接近月平均、沒有下雨的平日（中央氣象署臺中測站實測資料）。")
+        custom = st.date_input("選擇日期", value=custom, min_value=dates[0], max_value=dates[-1])
+    st.caption("代表日：該月份中氣溫最接近月平均、沒有下雨的平日（中央氣象署臺中測站實測資料）。"
+               + (f"目前使用 Open-Meteo，可選 {dates[0]} 到 {dates[-1]}（今天之後為預報）。" if live_weather else ""))
     hour = st.slider("模擬時間", 0, 23, value=sim_hour, format="%d:00",
                      help="平面圖顯示這個時刻的室溫與家電用電；遙控器操作從這個時刻起生效")
     if st.button("套用", type="primary", width="stretch"):
         apply_ui(preset=preset or ui["preset"], custom_day=custom, hour=hour)
+
+
+@st.dialog("📍 地區與天氣")
+def dialog_location() -> None:
+    towns = load_towns()
+    source = st.radio("天氣來源", list(WEATHER_SOURCES), index=list(WEATHER_SOURCES).index(location["source"]),
+                      format_func=WEATHER_SOURCES.get)
+    if source == "cwa":
+        st.caption("中央氣象署臺中測站（467490）2026 年 1–9 月逐時實測，不需要網路，結果可重現（預設）。")
+        new_loc = {**location, "source": "cwa"}
+    else:
+        counties = list(towns)
+        c1, c2 = st.columns(2)
+        county = c1.selectbox("縣市", counties, index=counties.index(location["county"]))
+        names = list(towns[county])
+        town = c2.selectbox("鄉鎮市區", names,
+                            index=names.index(location["town"]) if location["town"] in names else 0)
+        lat, lon = towns[county][town]
+        st.caption(f"中心點：北緯 {lat:.3f}°、東經 {lon:.3f}°（內政部鄉鎮市區界線計算）。"
+                   "天氣：過去用再分析資料、近期與未來 7 天用預報（約 9–25 km 網格，與單一測站略有差異；"
+                   "市區測站受熱島效應影響，通常比網格值高約 1°C）。太陽位置也依此地點計算。")
+        new_loc = {"source": "openmeteo", "county": county, "town": town}
+    if st.button("套用", type="primary", width="stretch"):
+        if new_loc["source"] == "openmeteo":
+            try:
+                with st.spinner("下載天氣資料…"):
+                    weather_source({"location": new_loc}).get_hourly_weather(date.today())
+            except WeatherUnavailable as e:
+                st.error(str(e))
+                return
+        new = copy.deepcopy(settings)
+        new["location"] = new_loc
+        if new_loc["source"] == "openmeteo" and location["source"] != "openmeteo":
+            st.session_state.ui.update(preset="自選日期", custom_day=date.today(), hour=datetime.now().hour)
+        update_settings(new, f"天氣改為 {location_label(new)}")
+        st.rerun()
 
 
 @st.dialog("💰 電價方案", width="large")
@@ -229,11 +292,12 @@ with st.sidebar:
     c1, c2, c3 = st.columns([1, 1, 1])
     if c1.button("◀", width="stretch", disabled=sim_hour == 0, help="前 1 小時"):
         apply_ui(hour=sim_hour - 1)
-    if c2.button("現在", width="stretch", help="模擬時間回到現在的小時"):
-        home.back_to_now()
+    if c2.button("現在", width="stretch", help="模擬時間（使用 Open-Meteo 時連同日期）回到現在"):
+        home.back_to_now(live_weather)
         st.rerun()
     if c3.button("▶", width="stretch", disabled=sim_hour == 23, help="後 1 小時"):
         apply_ui(hour=sim_hour + 1)
+    menu_item("📍 地區與天氣", location_label(settings), dialog_location, "location")
     menu_item("💰 電價方案", tariff.plans[plan_id]["name"], dialog_tariff, "tariff")
     menu_item("🎛️ 運轉模式", mode_schedule.name, dialog_mode, "mode")
     menu_item("🌡️ 舒適偏好", f"夏季清醒 {cooling['preferred_awake_c']:g}°C、睡眠 {cooling['preferred_sleep_c']:g}°C",

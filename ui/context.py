@@ -14,13 +14,13 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-from core.data_source import CsvMeterSource, CwaCsvWeatherSource
+from core.data_source import CsvMeterSource
 from core.metrics import Analyzer, compare_with_meter
 from core.optimizer import ModeSchedule
 from core.simulator import ControlPlan, SimulatedMeterSource, SimulationResult
 from ui import insights, usage, whatif
 from ui.floorplan import apply_remote
-from ui.settings import build_analyzer
+from ui.settings import build_analyzer, location_key, location_label, weather_source
 
 BASELINE = "基準（一般習慣）"
 WEEKDAY_NAMES = "一二三四五六日"
@@ -86,7 +86,8 @@ def month_pdf(_analyzer: Analyzer, settings_key: str, year: int, month: int, pla
     base = table.iloc[0]
     price = base[f"{plan_name}(元)"] / base["月用電(kWh)"] if base["月用電(kWh)"] else 0.0
     return month_report_pdf(year, month, _analyzer.sim.house.name, plan_name, table, recs, daily,
-                            insights.month_insights(daily, focus, price))
+                            insights.month_insights(daily, focus, price),
+                            weather_label=location_label(json.loads(settings_key)).replace("｜", " "))
 
 
 @st.cache_data(max_entries=8, show_spinner="試算各電價方案的月電費…")
@@ -95,16 +96,22 @@ def month_bills(_analyzer: Analyzer, settings_key: str, year: int, month: int) -
     return _analyzer.sim.run_month(year, month, "tou_2", _analyzer.opt.baseline_plan).bills()
 
 
-@st.cache_data
-def available_dates() -> list[date]:
-    return CwaCsvWeatherSource().available_dates()
+@st.cache_data(ttl=3600)
+def available_dates(location: str | None = None) -> list[date]:
+    """所選天氣來源有資料的日期（location 為 ui.settings.location_key；Open-Meteo 每小時更新到今天＋7 天）。"""
+    settings = {"location": json.loads(location)} if location else {}
+    return weather_source(settings).available_dates()
+
+
+def _dates_for(settings_key: str) -> list[date]:
+    return available_dates(location_key(json.loads(settings_key)))
 
 
 @st.cache_data(max_entries=16, show_spinner="推演一整年（每個情境約 3 秒）…")
 def annual_scenario(settings_key: str, scenario_id: str, plan_id: str) -> pd.DataFrame:
     """情境比較：某個情境（或目前 current）的全年逐月用電與電費。"""
     settings, params = whatif.apply_scenario(json.loads(settings_key), whatif.default_params(), scenario_id)
-    return whatif.annual(settings, params, plan_id, set(available_dates()))
+    return whatif.annual(settings, params, plan_id, set(_dates_for(settings_key)))
 
 
 @st.cache_data(max_entries=4, show_spinner="比對實測與模擬…")
@@ -112,7 +119,7 @@ def meter_comparison(_analyzer: Analyzer, settings_key: str, path: str) -> pd.Da
     """異常偵測：實測電表 CSV 與模擬（一般習慣）的逐時對照表；只比對有天氣資料的日子。"""
     measured = CsvMeterSource(Path(path))
     simulated = SimulatedMeterSource(_analyzer.sim, control=_analyzer.opt.baseline_plan)
-    weather_days = set(available_dates())
+    weather_days = set(_dates_for(settings_key))
     days = [d for d in measured.available_dates() if d in weather_days]
     detail, _ = compare_with_meter(measured, simulated, days, _analyzer.cfg["calibration"]["hourly"])
     return detail
@@ -121,7 +128,7 @@ def meter_comparison(_analyzer: Analyzer, settings_key: str, path: str) -> pd.Da
 @st.cache_data(max_entries=24, show_spinner="推演整月用電（預測用，約 2 秒）…")
 def month_profile(_analyzer: Analyzer, settings_key: str, year: int, month: int, plan_id: str):
     """預測頁：某月一般習慣的每日用電概況；沒有天氣資料的月份改用最接近的月份（回傳實際使用的月份）。"""
-    dates = set(available_dates())
+    dates = set(_dates_for(settings_key))
     months = sorted({(d.year, d.month) for d in dates})
     src = usage.source_month(year, month, months, _analyzer.sim.tariff)
     if src is None:
@@ -181,6 +188,10 @@ class AppContext:
     dates: list[date] = field(default_factory=list)
     pages: dict = field(default_factory=dict)       # 頁面物件（st.page_link 用）
     person_overrides: dict = field(default_factory=dict)   # 人物臨時變動（拖曳到別的房間）
+
+    @property
+    def location_label(self) -> str:
+        return location_label(self.settings)
 
     @property
     def sim(self):
