@@ -195,7 +195,10 @@ class Simulator:
             temps = new
         return frames
 
-    def run(self, day: date, plan_id: str = "tou_2", control: ControlPlan | None = None) -> SimulationResult:
+    def run(self, day: date, plan_id: str = "tou_2", control: ControlPlan | None = None,
+            calibrate: bool = True) -> SimulationResult:
+        """calibrate：套用電表校正係數（params["calibration"]，由 core/calibration.py 擬合）；
+        擬合時要用未校正的結果，傳 False。"""
         control = control or load_baseline_plan()
         weather = self.weather.get_hourly_weather(day)
         weather = self.load_model.with_solar_geometry(weather, day)   # 各方位牆面日射
@@ -238,6 +241,9 @@ class Simulator:
         records_df = (records_df.groupby(["hour", "space_id", "space", "appliance_id", "appliance",
                                           "load_type", "category"], sort=False, as_index=False)["kwh"].sum())
 
+        cal = self.load_model.params.get("calibration") if calibrate else None
+        if cal:
+            records_df = apply_calibration(records_df, cal)
         hourly = self._price_hourly(records_df, weather, day, plan_id)
         climate_df = pd.concat(climate, ignore_index=True) if climate else pd.DataFrame()
         return SimulationResult(day, day_type, plan_id, control.name, records_df, hourly, climate_df, tasks)
@@ -272,6 +278,22 @@ class Simulator:
                   control: ControlPlan | None = None) -> MonthResult:
         days = [date(year, month, d) for d in range(1, calendar.monthrange(year, month)[1] + 1)]
         return MonthResult(self, parallel_map(_run_day, days, self, plan_id, control))   # 每天分給不同核心
+
+
+def apply_calibration(records: pd.DataFrame, cal: dict) -> pd.DataFrame:
+    """依電表校正係數修正用電：冷氣 × ac_factor、其他家電 × other_factor，另加「未建模待機」base_w。
+    只修正用電量（電費、尖峰隨之改變），不改變室溫等物理狀態。"""
+    out = records.copy()
+    ac = out["appliance_id"] == "air_conditioner"
+    out.loc[ac, "kwh"] *= cal.get("ac_factor", 1.0)
+    out.loc[~ac, "kwh"] *= cal.get("other_factor", 1.0)
+    base_kwh = cal.get("base_w", 0.0) / 1000
+    if base_kwh > 0:
+        extra = pd.DataFrame({"hour": range(24), "space_id": "house", "space": "全屋", "appliance_id": "unmodeled_base",
+                              "appliance": "未建模待機（校正）", "load_type": LoadType.ESSENTIAL.label,
+                              "category": "必要負載", "kwh": base_kwh})
+        out = pd.concat([out, extra], ignore_index=True)
+    return out
 
 
 def _run_day(day: date, sim: Simulator, plan_id: str, control: ControlPlan | None) -> SimulationResult:

@@ -1,6 +1,7 @@
 """📊 分析：今日明細、模式比較、家電排程、室內環境、整月分析與建議、情境比較（What-if）與投資回收、用電異常偵測。"""
 from __future__ import annotations
 
+import copy
 from pathlib import Path
 
 import pandas as pd
@@ -8,16 +9,27 @@ import streamlit as st
 
 from core.data_source import full_months
 from ui import anomaly, charts, insights, whatif
-from ui.context import BASELINE, AppContext, analyze_month, annual_scenario, meter_comparison, month_pdf
+from ui.context import (
+    BASELINE,
+    AppContext,
+    analyze_month,
+    annual_scenario,
+    meter_calibration,
+    meter_comparison,
+    month_pdf,
+    update_settings,
+)
 from ui.theme import page_header, tips_card
 
 METER_DIR = Path(__file__).resolve().parent.parent.parent / "data" / "meter"
+DEMO_AMI = METER_DIR / "demo_ami_2026-07.csv"     # 電表校正的示範合成資料（全屋逐 15 分鐘，台電 AMI 樣式）
 
 
 def render(ctx: AppContext) -> None:
     page_header("ANALYSIS · 分析", "用電明細與模式比較", [(f"📅 <b>{ctx.day}</b> {ctx.weekday}", ""),
                                                    (f"🎛️ {ctx.mode_schedule.name}", "")])
-    tabs = st.tabs(["今日明細", "模式比較", "家電排程", "室內環境", "整月分析與建議", "情境比較", "異常偵測"])
+    tabs = st.tabs(["今日明細", "模式比較", "家電排程", "室內環境", "整月分析與建議", "情境比較", "異常偵測",
+                    "電表校正"])
     with tabs[0]:
         _today(ctx)
     with tabs[1]:
@@ -32,6 +44,8 @@ def render(ctx: AppContext) -> None:
         _whatif(ctx)
     with tabs[6]:
         _anomaly(ctx)
+    with tabs[7]:
+        _calibration(ctx)
 
 
 def _scenarios(ctx: AppContext) -> dict:
@@ -179,8 +193,57 @@ def _whatif(ctx: AppContext) -> None:
                                          if proxy else "") + "電費依所選方案的月電費計算（含基本電費與累進級距）。")
 
 
+def _calibration(ctx: AppContext) -> None:
+    st.caption("上傳家裡電表的用電資料，系統會和模擬逐時比對，並自動算出校正係數，讓推演更接近你家的實際用電。"
+               "台電智慧電表（AMI）可在台電網站或 App 查詢每 15 分鐘用電；匯出後存成 CSV（Excel 請另存為 CSV）。"
+               "需要「時間」欄與「用電度數（kWh）」或「功率（W）」欄，間隔 15 分鐘到 1 小時皆可。")
+    current = ctx.settings.get("calibration")
+    if current:
+        st.success(f"目前已套用校正：冷氣 × {current['ac_factor']:.2f}、其他家電 × {current['other_factor']:.2f}、"
+                   f"未建模待機 {current['base_w']:.0f} W", icon="✅")
+    c1, c2 = st.columns([3, 1], vertical_alignment="bottom")
+    upload = c1.file_uploader("電表 CSV", type=["csv"], key="meter_upload")
+    use_demo = c2.toggle("使用示範資料", help="合成資料（不是實測）：冷氣 ×1.25、其他 ×0.9、多 60 W 待機，用來展示校正能找回這些差異")
+    data = upload.getvalue() if upload else (DEMO_AMI.read_bytes() if use_demo else None)
+    if data is None:
+        st.info("上傳電表 CSV，或打開「使用示範資料」看看效果。", icon="📥")
+        return
+    try:
+        out = meter_calibration(ctx.analyzer, ctx.key, data, ctx.plan_id)
+    except ValueError as e:
+        st.error(f"無法使用這個檔案：{e}")
+        return
+    cal, before, after = out["calibration"], out["before"], out["after"]
+    st.caption(f"讀到 {out['n_days_file']} 天、每 {out['interval_min']} 分鐘一筆（用電欄位「{out['column']}」）；"
+               f"其中 {len(out['days'])} 天有天氣資料，用來比對。" + ("　⚠️ 示範合成資料" if upload is None else ""))
+    c = st.columns(4)
+    c[0].metric("冷氣用電倍率 α", f"{cal.ac_factor:.2f}", help="大於 1：實際冷氣比模型耗電（例如冷氣較舊、西曬更嚴重）")
+    c[1].metric("其他家電倍率 β", f"{cal.other_factor:.2f}", help="大於 1：其他家電用得比預設作息多")
+    c[2].metric("未建模待機 γ", f"{cal.base_kw * 1000:.0f} W", help="模型沒有的常開電器（例如魚缸、伺服器、待機電器）")
+    c[3].metric("逐時誤差 CV(RMSE)", f"{after['CV(RMSE)(%)']:.0f}%", f"{after['CV(RMSE)(%)'] - before['CV(RMSE)(%)']:+.0f}%",
+                delta_color="inverse", help="ASHRAE Guideline 14 逐時標準：≤ 30%")
+    st.altair_chart(charts.calibration_daily(out["merged"]), width="stretch")
+    table = pd.DataFrame([{"": "校正前", **before}, {"": "校正後", **after}])
+    st.dataframe(table, hide_index=True, width="stretch", column_config={
+        "實測合計(kWh)": st.column_config.NumberColumn(format="%.1f"), "模擬合計(kWh)": st.column_config.NumberColumn(format="%.1f"),
+        "NMBE(%)": st.column_config.NumberColumn(format="%.1f"), "CV(RMSE)(%)": st.column_config.NumberColumn(format="%.1f")})
+    st.caption("NMBE：整體偏高或偏低（標準 ±10%）；CV(RMSE)：逐時誤差大小（標準 ≤ 30%），兩者都達標才算「通過」。"
+               "校正只修正用電量（電費、尖峰隨之改變），不改變室溫等物理狀態。")
+    b1, b2 = st.columns(2)
+    if b1.button("套用校正", type="primary", width="stretch"):
+        new = copy.deepcopy(ctx.settings)
+        new["calibration"] = cal.as_settings()
+        update_settings(new, "已套用電表校正，所有頁面的用電與電費已依校正係數修正")
+        st.rerun()
+    if current and b2.button("清除校正", width="stretch"):
+        new = copy.deepcopy(ctx.settings)
+        new.pop("calibration", None)
+        update_settings(new, "已清除電表校正")
+        st.rerun()
+
+
 def _anomaly(ctx: AppContext) -> None:
-    files = sorted(METER_DIR.glob("*.csv"))
+    files = sorted(f for f in METER_DIR.glob("*.csv") if f != DEMO_AMI)   # 全屋 AMI 示範檔給「電表校正」用
     st.caption("把智慧插座或電表的實測用電和模擬（一般習慣）的預測逐時比較，誤差超出統計門檻的時段標為異常。"
                "門檻用穩健統計（中位數與 MAD），模型整體偏高或偏低不會被當成異常，只抓「突然不一樣」的時段。")
     if not files:

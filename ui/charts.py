@@ -299,3 +299,20 @@ def room_humidity(result: SimulationResult, space_id: str) -> alt.LayerChart:
                                   legend=None),
         tooltip=[alt.Tooltip("hour:Q", title="時"), "項目:N", alt.Tooltip("%:Q", title="相對濕度（%）", format=".0f")])
     return (band + lines).properties(height=240)
+
+
+def calibration_daily(merged: pd.DataFrame) -> alt.Chart:
+    """電表校正：每日實測、模擬（校正前）、模擬（校正後）用電。"""
+    daily = merged.groupby("date")[["kwh", "before_kwh", "after_kwh"]].sum().reset_index()
+    daily = daily.rename(columns={"kwh": "電表實測", "before_kwh": "模擬（校正前）", "after_kwh": "模擬（校正後）"})
+    daily["date"] = pd.to_datetime(daily["date"])
+    names = ["電表實測", "模擬（校正前）", "模擬（校正後）"]
+    long = daily.melt("date", value_vars=names, var_name="項目", value_name="度")
+    return alt.Chart(long).mark_line(point=alt.OverlayMarkDef(size=22), strokeWidth=2).encode(
+        x=alt.X("date:T", title="日期", axis=alt.Axis(format="%m/%d")),
+        y=alt.Y("度:Q", title="每日用電（度）", scale=alt.Scale(zero=False)),
+        color=alt.Color("項目:N", scale=alt.Scale(domain=names, range=["#eb6834", "#8a8a8a", "#2a78d6"]),
+                        legend=alt.Legend(orient="top", title=None)),
+        strokeDash=alt.StrokeDash("項目:N", scale=alt.Scale(domain=names, range=[[1, 0], [4, 3], [1, 0]]), legend=None),
+        tooltip=[alt.Tooltip("date:T", title="日期", format="%Y-%m-%d"), "項目:N", alt.Tooltip("度:Q", format=".2f")],
+    ).properties(height=300)

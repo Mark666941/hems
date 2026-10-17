@@ -116,6 +116,18 @@ def annual_scenario(settings_key: str, scenario_id: str, plan_id: str) -> pd.Dat
     return whatif.annual(settings, params, plan_id, set(_dates_for(settings_key)))
 
 
+@st.cache_data(max_entries=4, show_spinner="比對電表與模擬、擬合校正係數…")
+def meter_calibration(_analyzer: Analyzer, settings_key: str, data: bytes, plan_id: str) -> dict:
+    """電表校正：讀檔 → 與模擬（一般習慣、未校正）逐時比對 → 擬合 α、β、γ（core/calibration.py）。"""
+    from core.calibration import calibrate, read_meter_csv
+
+    measured = read_meter_csv(data)
+    out = calibrate(_analyzer.sim, measured, set(_dates_for(settings_key)), plan_id, _analyzer.opt.baseline_plan,
+                    _analyzer.cfg["calibration"]["hourly"])
+    return {**out, "interval_min": measured.attrs["interval_min"], "column": measured.attrs["column"],
+            "n_days_file": measured["date"].nunique()}
+
+
 @st.cache_data(max_entries=4, show_spinner="比對實測與模擬…")
 def meter_comparison(_analyzer: Analyzer, settings_key: str, path: str) -> pd.DataFrame:
     """異常偵測：實測電表 CSV 與模擬（一般習慣）的逐時對照表；只比對有天氣資料的日子。"""

@@ -131,6 +131,8 @@ def build_analyzer(settings: dict, params: dict | None = None) -> Analyzer:
     schedule = Schedule(house, config=settings["schedule"])
     params = copy.deepcopy(params or load_params())
     params["site"]["latitude"], params["site"]["longitude"] = location_coords(settings)   # 太陽位置用所選地區
+    if settings.get("calibration"):                       # 電表校正係數（分析頁「電表校正」擬合後套用）
+        params["calibration"] = settings["calibration"]
     load_model = LoadModel(house, schedule, params, adjacency=adjacency(settings))   # 相鄰關係來自平面圖
     simulator = Simulator(house, schedule, load_model, weather=weather_source(settings))
     baseline = ControlPlan(name="基準（一般習慣）", default_setpoint=float(settings["baseline_setpoint_c"]))
