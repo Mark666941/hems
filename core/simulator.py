@@ -172,6 +172,7 @@ class Simulator:
     def run(self, day: date, plan_id: str = "tou_2", control: ControlPlan | None = None) -> SimulationResult:
         control = control or load_baseline_plan()
         weather = self.weather.get_hourly_weather(day)
+        weather = self.load_model.with_solar_geometry(weather, day)   # 各方位牆面日射
         day_type = day_type_for(day, self.tariff.is_off_peak_day)
 
         records, climate = [], []

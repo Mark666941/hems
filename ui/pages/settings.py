@@ -7,6 +7,7 @@ from datetime import time
 import pandas as pd
 import streamlit as st
 
+from core.solar import ORIENTATION_NAMES
 from ui.context import AppContext, update_settings
 from ui.settings import (
     ROUTINE_LABELS,
@@ -33,7 +34,8 @@ def render(ctx: AppContext) -> None:
     st.caption("修改後按「套用」，所有結果會依新設定重新計算。常用設定（日期、電價、模式、舒適偏好）在左側選單。")
 
     with st.expander("🏠 房型：空間範本與面積", expanded=True):
-        st.caption("可新增或刪除列。新增的空間依範本帶入預設家電；家庭成員使用的臥室、浴室若被刪除會提示錯誤。")
+        st.caption("可新增或刪除列。新增的空間依範本帶入預設家電；家庭成員使用的臥室、浴室若被刪除會提示錯誤。"
+                   "窗戶方位會影響日射量（西曬）。")
         edited = st.data_editor(
             pd.DataFrame(spaces_table(settings)), num_rows="dynamic", hide_index=True, key="spaces_editor",
             width="stretch",
@@ -42,6 +44,9 @@ def render(ctx: AppContext) -> None:
                 "範本": st.column_config.SelectboxColumn(options=list(templates), required=True,
                                                        help="、".join(f"{k}={v['name']}" for k, v in templates.items())),
                 "坪數": st.column_config.NumberColumn(min_value=0.0, max_value=50.0, step=0.5),
+                "窗戶方位": st.column_config.SelectboxColumn(
+                    options=["未指定", *ORIENTATION_NAMES.values()],
+                    help="窗戶與外牆朝向。朝西的房間下午會被西曬，冷氣較耗電；朝南的房間冬天日照較多。未指定＝取四面平均"),
             })
         if st.button("套用房型"):
             update_settings(apply_spaces_table(settings, edited.to_dict("records")), "已更新房型")

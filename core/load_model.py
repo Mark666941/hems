@@ -1,6 +1,6 @@
 """負載與耗電模型：給定空間、天氣、時間、設定溫度，算出每小時各家電耗電。
 
-冷房負載（W）＝ 外牆傳熱 + 窗戶傳熱 + 窗戶日射 + 人體（顯熱＋潛熱）
+冷房負載（W）＝ 外牆傳熱 + 窗戶傳熱 + 窗戶日射（依窗戶方位與太陽位置） + 人體（顯熱＋潛熱）
              + 室內家電發熱 + 外氣滲透（顯熱＋潛熱）+ 蓄熱移除（pull-down）
 冷氣耗電（W）＝ 冷房負載 ÷ COP；冷房能力與 COP 依性能曲線（室外乾球、室內濕球）與部分負載率變化，
              額定 COP 依能源效率等級。
@@ -16,12 +16,14 @@ from __future__ import annotations
 import json
 import math
 from dataclasses import dataclass, fields
+from datetime import date
 from pathlib import Path
 
 import pandas as pd
 
 from core.models import Appliance, House, LoadType, Space
 from core.schedule import Schedule
+from core.solar import hourly_vertical
 
 CONFIG_DIR = Path(__file__).resolve().parent.parent / "config"
 MJ_PER_HOUR_TO_W = 1e6 / 3600        # 每小時日射量 MJ/m² → 平均日射強度 W/m²
@@ -107,10 +109,12 @@ class CoolingLoad:
         return {f.name: getattr(self, f.name) for f in fields(self)}
 
 
-def sol_air_temps(temps: list[float], solar_w_m2: list[float], env: dict) -> list[float]:
-    """等效日射溫度：外牆吸收日射後，相當於室外溫度升高多少。"""
-    return [t + env["wall_absorptance"] * s * env["vertical_irradiance_ratio"] / env["h_out"]
-            for t, s in zip(temps, solar_w_m2)]
+def sol_air_temps(temps: list[float], solar_w_m2: list[float], env: dict,
+                  vertical_w_m2: list[float] | None = None) -> list[float]:
+    """等效日射溫度：外牆吸收日射後，相當於室外溫度升高多少。
+    vertical_w_m2：牆面（垂直面）日射；未給時以水平日射 × 平均比例估算。"""
+    vertical = vertical_w_m2 if vertical_w_m2 is not None else [s * env["vertical_irradiance_ratio"] for s in solar_w_m2]
+    return [t + env["wall_absorptance"] * v / env["h_out"] for t, v in zip(temps, vertical)]
 
 
 def effective_wall_temps(sol_air: list[float], lag_h: int, decrement: float) -> list[float]:
@@ -134,10 +138,13 @@ def cooling_load(
     internal_w: float = 0.0,
     on_fraction: float = 1.0,
     pulldown_w: float = 0.0,
+    vertical_w_m2: float | None = None,
 ) -> CoolingLoad:
     """計算某空間某小時的冷房負載。on_fraction 為冷氣這小時運轉的時間比例；
-    人體與家電發熱已是一小時平均值，不再乘比例。"""
+    人體與家電發熱已是一小時平均值，不再乘比例。
+    vertical_w_m2：窗戶所在牆面的垂直面日射（依方位，core.solar）；未給時以水平日射 × 平均比例估算。"""
     env, inf = params["envelope"], params["infiltration"]
+    vertical = vertical_w_m2 if vertical_w_m2 is not None else solar_w_m2 * env["vertical_irradiance_ratio"]
     airflow_m3_s = geo.volume_m3 * inf["ach"] / 3600
     w_out = humidity_ratio(t_out, rh_out)
     w_in = humidity_ratio(t_set, inf["indoor_rh_pct"])
@@ -145,8 +152,7 @@ def cooling_load(
     return CoolingLoad(
         wall=f * env["u_wall"] * geo.wall_m2 * (t_wall_eff - t_set),
         window_conduction=f * env["u_window"] * geo.window_m2 * (t_out - t_set),
-        window_solar=f * geo.window_m2 * solar_w_m2 * env["vertical_irradiance_ratio"]
-        * env["shgc"] * env["interior_shading"],
+        window_solar=f * geo.window_m2 * vertical * env["shgc"] * env["interior_shading"],
         people_sensible=people_sensible_w,
         people_latent=people_latent_w,
         internal=internal_w,
@@ -253,6 +259,19 @@ class LoadModel:
         for _, a in house.all_appliances():
             if a.id == "air_conditioner" and a.capacity_kw:
                 a.power_w = ac_rating(a, self.params["air_conditioner"])[0]
+
+    # ----- 方位日射 -----
+
+    def with_solar_geometry(self, weather: pd.DataFrame, day: date) -> pd.DataFrame:
+        """加上各方位垂直面日射欄位 vert_<方位>（W/m²），vert_avg 為四面平均（未指定方位的空間）。
+        推演引擎與最佳化都先呼叫這裡，兩邊用同一份日射。"""
+        site = self.params["site"]
+        ghi = [x * MJ_PER_HOUR_TO_W for x in weather.solar_mj_m2]
+        out = weather.copy()
+        for o in [None, *sorted({s.orientation for s in self.house.spaces if s.orientation})]:
+            out[f"vert_{o or 'avg'}"] = hourly_vertical(day, ghi, site["latitude"], site["longitude"], o,
+                                                        site["timezone_h"], site["ground_albedo"])
+        return out
 
     # ----- 人體發熱 -----
 
@@ -363,7 +382,9 @@ class LoadModel:
         env, ac = self.params["envelope"], self.params["air_conditioner"]
         temps, rhs = list(weather.temp_c), list(weather.rh_pct)
         solar = [s * MJ_PER_HOUR_TO_W for s in weather.solar_mj_m2]
-        sol_air = sol_air_temps(temps, solar, env)
+        vert_col = f"vert_{space.orientation or 'avg'}"
+        vertical = list(weather[vert_col]) if vert_col in weather.columns else None   # 沒有日期時用平均比例
+        sol_air = sol_air_temps(temps, solar, env, vertical)
         t_wall = effective_wall_temps(sol_air, env["wall_time_lag_h"], env["wall_decrement_factor"])
         ppl_s, ppl_l = self.people_gains(space, day_type)
         capacity_kj_k = self.params["thermal_mass"]["kj_per_m2_k"] * geo.floor_m2
@@ -401,7 +422,8 @@ class LoadModel:
                 if on > 0 and t_room > setpoints[h]:
                     pulldown = capacity_kj_k * (t_room - setpoints[h]) / 3.6  # kJ → Wh（一小時平均 W）
                 load = cooling_load(geo, self.params, temps[h], rhs[h], solar[h], t_wall[h], setpoints[h],
-                                    ppl_s[h], ppl_l[h], internal[h], on, pulldown)
+                                    ppl_s[h], ppl_l[h], internal[h], on, pulldown,
+                                    vertical[h] if vertical is not None else None)
                 if not has_ac or on <= 0:
                     load = CoolingLoad()  # 冷氣沒開就沒有冷房負載（只記錄耗電為 0）
                 result = ac_power(load.total, rated_w, temps[h], setpoints[h], ac, on, rated_cop, rh_ac)

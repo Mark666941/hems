@@ -15,6 +15,8 @@ from pathlib import Path
 
 import pandas as pd
 
+from core.solar import ORIENTATIONS
+
 CONFIG_DIR = Path(__file__).resolve().parent.parent / "config"
 
 # 房屋設定中可以覆寫的家電欄位
@@ -55,6 +57,7 @@ class Space:
     template: str
     area_ping: float
     appliances: list[Appliance] = field(default_factory=list)
+    orientation: str | None = None   # 窗戶與外牆朝向：N/NE/E/SE/S/SW/W/NW；None 代表未指定（取四面平均）
 
     @property
     def total_power_w(self) -> float:
@@ -175,6 +178,9 @@ def build_space(entry: dict, templates: dict[str, dict], catalog: dict[str, Appl
     entries += entry.get("add_appliances", [])
     overrides = entry.get("appliance_overrides", {})
 
+    orientation = entry.get("orientation") or None
+    if orientation is not None and orientation not in ORIENTATIONS:
+        raise ValueError(f"窗戶方位必須是 {'、'.join(ORIENTATIONS)} 之一：{orientation}")
     count = entry.get("count", 1)
     spaces = []
     for i in range(1, count + 1):
@@ -192,6 +198,7 @@ def build_space(entry: dict, templates: dict[str, dict], catalog: dict[str, Appl
             template=template_id,
             area_ping=float(entry.get("area_ping", template["default_area_ping"])),
             appliances=appliances,
+            orientation=orientation,
         ))
     return spaces
 

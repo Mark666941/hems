@@ -411,6 +411,7 @@ class Optimizer:
     def optimize(self, day: date, mode: str | ModeSchedule, plan_id: str = "tou_2") -> OptimizationResult:
         schedule = mode if isinstance(mode, ModeSchedule) else ModeSchedule.single(self.modes[mode])
         weather = self.sim.weather.get_hourly_weather(day)
+        weather = self.sim.load_model.with_solar_geometry(weather, day)   # 各方位牆面日射
         day_type = day_type_for(day, self.sim.tariff.is_off_peak_day)
         prices = list(self.sim.tariff.hourly_prices(day, plan_id)["price"])
         temps = list(weather["temp_c"])

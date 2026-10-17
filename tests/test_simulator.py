@@ -33,7 +33,7 @@ def test_energy_is_conserved_across_views(summer):
 
 def test_matches_load_model_per_space(sim, summer):
     # 推演引擎的冷氣用電要和負載模型直接算的一致（基準設定 25°C）
-    weather = sim.weather.get_hourly_weather(SUMMER)
+    weather = sim.load_model.with_solar_geometry(sim.weather.get_hourly_weather(SUMMER), SUMMER)   # 同引擎：加上方位日射
     df = sim.load_model.space_hourly(sim.house.get_space("living_room"), weather, "weekday", 25)
     engine = summer.records.query("space_id == 'living_room' and appliance_id == 'air_conditioner'")["kwh"].sum()
     assert engine == pytest.approx(df["air_conditioner"].sum() / 1000)
@@ -96,10 +96,14 @@ def test_room_temperature_is_physical(summer):
 
 
 def test_winter_room_temperature_without_heating(sim):
-    # 台中冬季無暖氣公寓，室內約 18–23°C（比室外 14–22°C 略暖）
+    # 台中冬季無暖氣公寓，室內約 18–23°C（比室外 14–22°C 略暖）；
+    # 朝南的房間冬天有陽光直射進窗（被動式太陽能得熱），白天可再暖 2–3°C
     c = sim.run(WINTER).climate
-    bedrooms = c[c["space_id"].isin(["master_bedroom", "bedroom_1", "bedroom_2", "living_room"])]
-    assert bedrooms["room_temp_c"].between(17, 25).all()
+    north = c[c["space_id"].isin(["bedroom_2"])]["room_temp_c"]
+    south = c[c["space_id"].isin(["master_bedroom", "living_room"])]["room_temp_c"]
+    assert north.between(17, 23).all()
+    assert south.between(17, 26).all()
+    assert south.max() > north.max() + 2
 
 
 # ---------- ControlPlan（階段 6 的介面）----------

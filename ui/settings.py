@@ -18,6 +18,7 @@ from core.models import House, house_from_config, load_appliance_catalog, load_s
 from core.optimizer import Optimizer
 from core.schedule import Schedule
 from core.simulator import ControlPlan, Simulator, load_baseline_plan
+from core.solar import ORIENTATION_NAMES
 
 CONFIG_DIR = Path(__file__).resolve().parent.parent / "config"
 
@@ -117,11 +118,14 @@ def apply_ac_specs(settings: dict, rows: list[dict]) -> dict:
 
 # ---------- 房型 ----------
 
+ORIENTATION_CODES = {name: code for code, name in ORIENTATION_NAMES.items()}   # 「西」→ "W"
+
 def spaces_table(settings: dict) -> list[dict]:
     """房屋設定 → 介面表格的列（名稱、範本、坪數）。"""
     templates = load_space_templates()
     return [{"id": s["id"], "名稱": s.get("name", templates[s["template"]]["name"]),
-             "範本": s["template"], "坪數": float(s.get("area_ping", templates[s["template"]]["default_area_ping"]))}
+             "範本": s["template"], "坪數": float(s.get("area_ping", templates[s["template"]]["default_area_ping"])),
+             "窗戶方位": ORIENTATION_NAMES.get(s.get("orientation") or "", "未指定")}
             for s in settings["house"]["spaces"]]
 
 
@@ -144,6 +148,11 @@ def apply_spaces_table(settings: dict, rows: list[dict]) -> dict:
         entry.update({"id": sid, "name": row["名稱"], "template": row["範本"]})
         if row["範本"] != "utility":
             entry["area_ping"] = float(row["坪數"] or 0)
+            orientation = ORIENTATION_CODES.get(row.get("窗戶方位") or "")
+            if orientation:
+                entry["orientation"] = orientation
+            else:
+                entry.pop("orientation", None)
         spaces.append(entry)
     new["house"]["spaces"] = spaces
     return new

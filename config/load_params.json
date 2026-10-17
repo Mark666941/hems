@@ -14,6 +14,14 @@
     }
   },
 
+  "site": {
+    "latitude": 24.15,
+    "longitude": 120.68,
+    "timezone_h": 8,
+    "ground_albedo": 0.2,
+    "_說明": "計算太陽位置的地點（預設臺中市中心）與地面反照率（一般地面 0.2）。各方位牆面日射見 core/solar.py。"
+  },
+
   "envelope": {
     "u_wall": 3.2,
     "u_window": 6.0,
@@ -24,7 +32,7 @@
     "vertical_irradiance_ratio": 0.45,
     "wall_time_lag_h": 4,
     "wall_decrement_factor": 0.4,
-    "_說明": "u_wall：15 cm RC 牆含粉刷、無隔熱（W/m²K）；u_window：5 mm 單層清玻璃鋁框；shgc：單層清玻璃日射取得率；interior_shading：窗簾遮蔽係數（估計）；wall_absorptance：淺色磁磚外牆日射吸收率；h_out：夏季外表面熱傳係數（ASHRAE 夏季設計值）；vertical_irradiance_ratio：各方位垂直面平均日射 ÷ 水平面日射（估計）；wall_time_lag_h / wall_decrement_factor：15 cm 混凝土牆的時滯與衰減（ASHRAE Fundamentals 典型範圍 4–6 h、0.3–0.5）。"
+    "_說明": "u_wall：15 cm RC 牆含粉刷、無隔熱（W/m²K）；u_window：5 mm 單層清玻璃鋁框；shgc：單層清玻璃日射取得率；interior_shading：窗簾遮蔽係數（估計）；wall_absorptance：淺色磁磚外牆日射吸收率；h_out：夏季外表面熱傳係數（ASHRAE 夏季設計值）；vertical_irradiance_ratio：各方位垂直面平均日射 ÷ 水平面日射（估計，只在沒有日期、無法計算太陽位置時使用）；wall_time_lag_h / wall_decrement_factor：15 cm 混凝土牆的時滯與衰減（ASHRAE Fundamentals 典型範圍 4–6 h、0.3–0.5）。"
   },
 
   "infiltration": {
