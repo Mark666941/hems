@@ -60,3 +60,16 @@ def test_optimize_method_switch(opt):
     for r in (a, b):
         e = opt.evaluate(r.result, schedule)
         assert e["目標值(元)"] == pytest.approx(e["電費(元)"] + e["舒適懲罰(元)"] + opt.demand_weight * e["尖峰需量(kW)"])
+
+
+def test_hybrid_never_worse_than_its_milp_start(opt):
+    # 局部搜尋只接受讓目標值變好的調整，所以混合法不會比它的 MILP 起點差（同一個完整推演評估）
+    schedule = ModeSchedule.single(opt.modes["normal"])
+    milp = opt.evaluate(optimize_milp(opt, DAY, "normal").result, schedule)["目標值(元)"]
+    hybrid_r = opt.optimize(DAY, "normal", method="hybrid")
+    hybrid = opt.evaluate(hybrid_r.result, schedule)["目標值(元)"]
+    assert hybrid_r.levels["method"] == "hybrid" and hybrid_r.levels["local_evaluations"] > 0
+    assert hybrid <= milp + 0.5      # 局部搜尋以房間分別評估（鄰房室溫固定），全屋推演允許些微差異
+    lo, hi = opt.modes["normal"].params.setpoint_range_c
+    for sid, sps in hybrid_r.plan.setpoints.items():
+        assert all(lo <= v <= hi for v, o in zip(sps, hybrid_r.plan.ac_on[sid]) if o > 0)

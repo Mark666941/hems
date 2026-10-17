@@ -269,3 +269,57 @@ def optimize_milp(opt, day: date, mode, plan_id: str = "tou_2", hourly_setpoints
     info = {"method": "milp", "hourly_setpoints": hourly_setpoints, **info, "rounds": history,
             "solve_s": time.perf_counter() - t0}
     return OptimizationResult(schedule, plan, result, opt._setpoint_table(result), opt._task_table(result), info)
+
+
+def optimize_hybrid(opt, day: date, mode, plan_id: str = "tou_2", rounds: int = 3):
+    """MILP＋局部搜尋：以 MILP 的逐時解為起點，在完整（非線性）推演上逐房逐時微調設定溫度。
+
+    MILP 擅長處理大量決策變數，但線性模型和完整推演有落差（變頻 COP、開機除濕）；
+    座標下降直接在完整推演上搜尋，準確但只能分組。混合法取兩者的優點：
+    每個房間、每個冷氣運轉的小時，試著把設定溫度 ±0.5°C，目標值（電費＋舒適懲罰）變好就保留，最多 rounds 輪。
+    鄰房室溫取 MILP 解的推演結果（同原本方法的做法）。"""
+    from core.optimizer import ModeSchedule, OptimizationResult
+
+    t0 = time.perf_counter()
+    base = optimize_milp(opt, day, mode, plan_id)
+    schedule = mode if isinstance(mode, ModeSchedule) else ModeSchedule.single(opt.modes[mode])
+    sim, lm = opt.sim, opt.sim.load_model
+    weather = lm.with_solar_geometry(sim.weather.get_hourly_weather(day), day)
+    day_type = day_type_for(day, sim.tariff.is_off_peak_day)
+    prices = list(sim.tariff.hourly_prices(day, plan_id)["price"])
+    season, prefs = opt.season(day)
+    ctx_all = opt.contexts(day_type, season)
+    plan = copy.deepcopy(base.plan)
+    plan.name = f"{schedule.name}（MILP＋局部搜尋）"
+    neighbors = {sid: list(g.sort_values("hour")["room_temp_c"]) for sid, g in base.result.climate.groupby("space_id")}
+    evaluations = 0
+    for space in opt.ac_spaces:
+        on, ctx = plan.ac_on[space.id], ctx_all[space.id]
+        factors = plan.appliance_factors.get(space.id)
+        sp = list(plan.setpoints[space.id])
+
+        def score(values: list[float], space=space, on=on, factors=factors, ctx=ctx) -> float:
+            return opt._space_objective(space, weather, day_type, prices, values, on, factors, ctx, schedule, prefs,
+                                        neighbors)[0]
+
+        best = score(sp)
+        evaluations += 1
+        for _ in range(rounds):
+            improved = False
+            for h in (h for h in range(24) if on[h] > 0):
+                lo, hi = opt._mode_params(schedule, h).setpoint_range_c
+                for step in (-SETPOINT_STEP_C, SETPOINT_STEP_C):
+                    value = sp[h] + step
+                    if not lo <= value <= hi:
+                        continue
+                    trial = sp[:h] + [value] + sp[h + 1:]
+                    s = score(trial)
+                    evaluations += 1
+                    if s < best - 1e-9:
+                        best, sp, improved = s, trial, True
+            if not improved:
+                break
+        plan.setpoints[space.id] = sp
+    result = sim.run(day, plan_id, plan)
+    info = {**base.levels, "method": "hybrid", "local_evaluations": evaluations, "solve_s": time.perf_counter() - t0}
+    return OptimizationResult(schedule, plan, result, opt._setpoint_table(result), opt._task_table(result), info)

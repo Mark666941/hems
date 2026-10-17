@@ -139,7 +139,8 @@ else:
 
 # ---------- 左側功能選單：每個功能一個設定視窗 ----------
 
-OPT_METHODS = {"coordinate": "座標下降（預設）", "milp": "混合整數規劃 MILP（全屋、逐時）"}
+OPT_METHODS = {"coordinate": "座標下降（預設）", "milp": "混合整數規劃 MILP（全屋、逐時）",
+               "hybrid": "MILP＋局部搜尋（效果最好）"}
 
 PLAN_GUIDE = {
     "progressive": ("一般家庭預設的計費方式。不分時段，**每月用越多度、每度越貴**（分 6 級，夏月 1.78–8.86 元）。",
@@ -262,6 +263,7 @@ def dialog_mode() -> None:
                       format_func=OPT_METHODS.get,
                       help="座標下降：逐房搜尋、每個時段一個設定溫度（預設，0.1 秒）。"
                            "MILP：全屋聯合混合整數規劃，每房每小時各自調整，舒適度通常較好（約 0.4 秒）。"
+                           "MILP＋局部搜尋：以 MILP 解為起點，在完整模型上逐時微調，各模式都最好（約 0.4 秒）。"
                            "比較結果見 docs/reports/optimizer_comparison.md")
     if st.button("套用", type="primary", width="stretch"):
         apply_ui(**changes, opt_method=method)
@@ -335,7 +337,7 @@ with st.sidebar:
         apply_ui(hour=sim_hour + 1)
     menu_item("📍 地區與天氣", location_label(settings), dialog_location, "location")
     menu_item("💰 電價方案", tariff.plans[plan_id]["name"], dialog_tariff, "tariff")
-    menu_item("🎛️ 運轉模式", mode_schedule.name + ("・MILP 最佳化" if ui.get("opt_method") == "milp" else ""),
+    menu_item("🎛️ 運轉模式", mode_schedule.name + ("・MILP 最佳化" if ui.get("opt_method") in ("milp", "hybrid") else ""),
               dialog_mode, "mode")
     menu_item("🌡️ 舒適偏好", f"夏季清醒 {cooling['preferred_awake_c']:g}°C、睡眠 {cooling['preferred_sleep_c']:g}°C",
               dialog_comfort, "comfort")

@@ -19,11 +19,11 @@ sys.path.insert(0, str(ROOT))
 
 import pandas as pd  # noqa: E402
 
-from core.milp import optimize_milp  # noqa: E402
+from core.milp import optimize_hybrid, optimize_milp  # noqa: E402
 from core.optimizer import MODE_ORDER, ModeSchedule, Optimizer  # noqa: E402
 from core.parallel import parallel_map  # noqa: E402
 
-METHODS = ["座標下降（原本）", "MILP 逐時", "MILP 分組"]
+METHODS = ["座標下降（原本）", "MILP 逐時", "MILP 分組", "MILP＋局部搜尋"]
 
 
 def md_table(df: pd.DataFrame) -> str:
@@ -45,6 +45,8 @@ def compare_day(day: date, opt: Optimizer) -> list[dict]:
         for name, hourly in ((METHODS[1], True), (METHODS[2], False)):
             r = optimize_milp(opt, day, mode, hourly_setpoints=hourly)
             runs.append((name, r, r.levels["solve_s"]))
+        r = optimize_hybrid(opt, day, mode)
+        runs.append((METHODS[3], r, r.levels["solve_s"]))
         for name, r, sec in runs:
             rows.append({"日期": day, "模式": opt.modes[mode].name, "方法": name,
                          **opt.evaluate(r.result, schedule), "計算秒數": sec})
@@ -72,17 +74,20 @@ def main() -> None:
         "可移轉負載窮舉 |",
         "| MILP 逐時 | 全屋聯合（隔間熱交換在方程式內）、每房每小時一個溫度；冷氣與可移轉負載一起考慮全屋尖峰；"
         "線性化模型，COP 以完整推演序列更新（最多 3 輪） |",
-        "| MILP 分組 | 同上，但每個時段一個設定溫度（與原本方法相同的自由度） |", "",
+        "| MILP 分組 | 同上，但每個時段一個設定溫度（與原本方法相同的自由度） |",
+        "| MILP＋局部搜尋 | 以 MILP 逐時解為起點，在完整推演上逐房逐時 ±0.5°C 微調（最多 3 輪） |", "",
         "## 整體平均（每案例）", "", md_table(total), "",
         "## 各模式平均", "", md_table(by_mode), "",
         "## 結論", "",
         f"- MILP 逐時：{wins[METHODS[1]]:.0f}% 的案例目標值優於原本方法，總目標值改善 {gain[METHODS[1]]:.1f}%。",
         f"- MILP 分組：{wins[METHODS[2]]:.0f}% 的案例優於原本方法，總目標值改善 {gain[METHODS[2]]:.1f}%。",
+        f"- **MILP＋局部搜尋**：{wins[METHODS[3]]:.0f}% 的案例優於原本方法，總目標值改善 {gain[METHODS[3]]:.1f}%；"
+        "結合 MILP 的逐時自由度與完整推演的準確度。",
         "- 改善主要來自「逐時調整設定溫度」：同樣分組時，直接在完整推演上搜尋的座標下降比線性化的 MILP 準確；",
         "  MILP 的價值在於能處理更多決策變數（每房每小時）且仍在 1 秒內求得全域最佳（對線性模型而言）。",
         "- 線性模型與完整推演的落差（變頻冷氣 COP 隨負載率變化、開機除濕、除濕機）使 MILP 的電費估計偏低；",
         "  舒適要求寬鬆、以省電為主的模式（省電、舒眠）原本方法略優。",
-        "- 實務上可再結合兩者：以 MILP 解為起點，在完整推演上做逐時局部搜尋（未來工作）。", "",
+        "- 混合法把 MILP 當成「好的起點」，再用完整推演修正線性化的誤差，是模型預測控制實務常見的做法。", "",
     ]
     out.write_text("\n".join(lines), encoding="utf-8")
     print("\n".join(lines))

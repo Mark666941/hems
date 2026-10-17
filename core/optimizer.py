@@ -413,10 +413,14 @@ class Optimizer:
 
     def optimize(self, day: date, mode: str | ModeSchedule, plan_id: str = "tou_2",
                  method: str = "coordinate") -> OptimizationResult:
-        """method："coordinate"＝逐房座標下降＋可移轉負載窮舉（預設）；"milp"＝全屋混合整數規劃（core/milp.py）。"""
+        """method："coordinate"＝逐房座標下降＋可移轉負載窮舉（預設）；"milp"＝全屋混合整數規劃（core/milp.py）；
+        "hybrid"＝MILP 解再於完整推演上逐時局部搜尋。"""
         if method == "milp":
             from core.milp import optimize_milp  # scipy 較慢載入，需要時才匯入
             return optimize_milp(self, day, mode, plan_id)
+        if method == "hybrid":
+            from core.milp import optimize_hybrid
+            return optimize_hybrid(self, day, mode, plan_id)
         schedule = mode if isinstance(mode, ModeSchedule) else ModeSchedule.single(self.modes[mode])
         weather = self.sim.weather.get_hourly_weather(day)
         weather = self.sim.load_model.with_solar_geometry(weather, day)   # 各方位牆面日射
