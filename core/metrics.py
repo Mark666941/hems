@@ -167,20 +167,23 @@ class Analyzer:
         clo = p["clo"][season]
         ctx_all = self.opt.contexts(result.day_type, season)
         rh_ac = self.sim.load_model.params["infiltration"]["indoor_rh_pct"]
-        weather = result.hourly.set_index("hour")
+        out_t, out_rh = list(result.hourly["temp_c"]), list(result.hourly["rh_pct"])
+        by_space = {sid: g.sort_values("hour") for sid, g in result.climate.groupby("space_id")}
         people = ppd_sum = ok = 0.0
         for space in self.opt.ac_spaces:
             awake = ctx_all[space.id].awake
-            climate = result.climate[result.climate["space_id"] == space.id].set_index("hour")
+            climate = by_space[space.id]              # 逐欄轉成列表再逐時讀（比 .loc 逐格讀快數十倍）
+            temps, on, load = list(climate["room_temp_c"]), list(climate["ac_on"]), list(climate["load_total_w"])
+            rhs = list(climate["room_rh_pct"]) if "room_rh_pct" in climate.columns else None
             for h in range(24):
                 if awake[h] <= 0:
                     continue
-                t = climate.loc[h, "room_temp_c"]
-                cooling = climate.loc[h, "ac_on"] > 0 and climate.loc[h, "load_total_w"] > 0
-                if "room_rh_pct" in climate.columns:      # 模擬的室內濕度（水氣平衡，A4）
-                    rh = climate.loc[h, "room_rh_pct"]
+                t = temps[h]
+                cooling = on[h] > 0 and load[h] > 0
+                if rhs is not None:                      # 模擬的室內濕度（水氣平衡，A4）
+                    rh = rhs[h]
                 else:
-                    rh = rh_ac if cooling else indoor_rh(t, weather.loc[h, "temp_c"], weather.loc[h, "rh_pct"])
+                    rh = rh_ac if cooling else indoor_rh(t, out_t[h], out_rh[h])
                 vel = p["air_speed_m_s"]["ac_on" if cooling else "ac_off"]
                 pmv, ppd = pmv_ppd(t, t, vel, rh, p["met_awake"], clo)
                 people += awake[h]
@@ -391,7 +394,7 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(description="HEMS 指標、模式比較與節省建議")
     parser.add_argument("day", nargs="?", help="日期；省略時跑夏、冬代表日")
-    parser.add_argument("--month", help="整月分析與節省建議，例如 2026-07（約 30 秒）")
+    parser.add_argument("--month", help="整月分析與節省建議，例如 2026-07（約 3 秒，多核心平行）")
     parser.add_argument("--plan", default="tou_2", help="電價方案：tou_2 / tou_3 / progressive")
     parser.add_argument("--calibrate", help="用電表／智慧插座 CSV 校正模型，例如 data/meter/demo_synthetic_2026-07.csv")
     args = parser.parse_args()

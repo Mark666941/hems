@@ -68,7 +68,7 @@ def day_metrics(_analyzer: Analyzer, _result: SimulationResult, cache_key: str) 
     return _analyzer.day_metrics(_result)
 
 
-@st.cache_data(max_entries=4, show_spinner="整月分析中（每天各模式都要最佳化，約 15 秒）…")
+@st.cache_data(max_entries=4, show_spinner="整月分析中（每天各模式都要最佳化，多核心平行計算，約 2–3 秒）…")
 def analyze_month(_analyzer: Analyzer, settings_key: str, year: int, month: int, plan_id: str):
     table, scenarios = _analyzer.compare_month(year, month, plan_id)
     recs = _analyzer.recommendations(year, month, plan_id, table, scenarios)

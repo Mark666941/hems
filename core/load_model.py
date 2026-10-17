@@ -17,6 +17,7 @@ import json
 import math
 from dataclasses import dataclass, fields
 from datetime import date
+from functools import lru_cache
 from pathlib import Path
 
 import pandas as pd
@@ -32,11 +33,13 @@ NOT_AWAKE = {"sleep", "out"}
 
 # ---------- 濕空氣性質 ----------
 
+@lru_cache(maxsize=65536)
 def saturation_pressure_kpa(t_c: float) -> float:
     """飽和水蒸氣壓（Magnus 公式，Alduchov & Eskridge 1996 係數）。"""
     return 0.61094 * math.exp(17.625 * t_c / (t_c + 243.04))
 
 
+@lru_cache(maxsize=65536)
 def humidity_ratio(t_c: float, rh_pct: float, p_kpa: float = 101.325) -> float:
     """絕對濕度（kg 水 / kg 乾空氣）。"""
     pw = rh_pct / 100 * saturation_pressure_kpa(t_c)
@@ -114,7 +117,10 @@ class CoolingLoad:
         return max(0.0, self.sensible + self.latent)
 
     def as_dict(self) -> dict[str, float]:
-        return {f.name: getattr(self, f.name) for f in fields(self)}
+        return {name: getattr(self, name) for name in _LOAD_FIELDS}
+
+
+_LOAD_FIELDS = [f.name for f in fields(CoolingLoad)]
 
 
 def sol_air_temps(temps: list[float], solar_w_m2: list[float], env: dict,
@@ -176,6 +182,7 @@ def cooling_load(
 
 # ---------- 冷氣效率 ----------
 
+@lru_cache(maxsize=65536)
 def wet_bulb_c(t_c: float, rh_pct: float) -> float:
     """濕球溫度（Stull 2011 經驗式，適用 RH 5–99%、−20–50°C，誤差約 ±0.3°C）。"""
     rh = min(max(rh_pct, 5.0), 99.0)
@@ -190,9 +197,14 @@ def _biquadratic(c: list[float], x: float, y: float) -> float:
 def performance_factors(t_out: float, t_wb_in: float, ac: dict) -> tuple[float, float]:
     """冷氣性能曲線：回傳（冷房能力倍率, COP 倍率），額定條件（室內濕球 19°C、室外 35°C）時皆為 1。
     能力倍率 = CapFT(x, y) ÷ CapFT(額定)；COP 倍率 = EIRFT(額定) ÷ EIRFT(x, y)。"""
-    x0, y0 = ac["rated_indoor_wb_c"], ac["rated_outdoor_c"]
-    cap = _biquadratic(ac["cap_ft"], t_wb_in, t_out) / _biquadratic(ac["cap_ft"], x0, y0)
-    cop = _biquadratic(ac["eir_ft"], x0, y0) / _biquadratic(ac["eir_ft"], t_wb_in, t_out)
+    return _performance(tuple(ac["cap_ft"]), tuple(ac["eir_ft"]), ac["rated_indoor_wb_c"], ac["rated_outdoor_c"],
+                        t_out, t_wb_in)
+
+
+@lru_cache(maxsize=65536)
+def _performance(cap_ft: tuple, eir_ft: tuple, x0: float, y0: float, t_out: float, t_wb_in: float):
+    cap = _biquadratic(cap_ft, t_wb_in, t_out) / _biquadratic(cap_ft, x0, y0)
+    cop = _biquadratic(eir_ft, x0, y0) / _biquadratic(eir_ft, t_wb_in, t_out)
     return cap, cop
 
 
@@ -294,10 +306,17 @@ class LoadModel:
                 self.interzone_ua.setdefault(b, {})[a] = ua
         self.awake = set(schedule.activities) - NOT_AWAKE
         self._people_cache: dict[tuple, tuple[list[float], list[float]]] = {}
+        self._prep_cache: dict[tuple, tuple] = {}
         # 有設定能力（kW）與能效等級的冷氣：額定耗電由能力 ÷ COP 推得，讓介面與排程顯示一致
         for _, a in house.all_appliances():
             if a.id == "air_conditioner" and a.capacity_kw:
                 a.power_w = ac_rating(a, self.params["air_conditioner"])[0]
+
+    def __getstate__(self) -> dict:
+        """傳給其他程序平行計算時不帶快取（快取很大，到了另一邊會重新建立）。"""
+        state = self.__dict__.copy()
+        state["_prep_cache"] = {}
+        return state
 
     # ----- 方位日射 -----
 
@@ -395,7 +414,8 @@ class LoadModel:
                      ac_on: list[float] | None = None,
                      appliance_factors: dict[str, list[float]] | None = None,
                      appliance_forced: dict[str, list[float | None]] | None = None,
-                     neighbor_temps: dict[str, list[float]] | None = None) -> pd.DataFrame:
+                     neighbor_temps: dict[str, list[float]] | None = None,
+                     as_frame: bool = True) -> pd.DataFrame | dict[str, list]:
         """某空間 24 小時的逐時結果：各家電耗電（W）、冷房負載組成、COP 等。
 
         weather：24 列，需有 temp_c、rh_pct、solar_mj_m2。
@@ -404,6 +424,7 @@ class LoadModel:
         appliance_factors：家電 id → 24 小時調整係數（0–1），例如照明調光 0.7、除濕機關閉 0。
                            必要負載不可調整。
         neighbor_temps：相鄰房間 24 小時室溫（推演引擎反覆計算時傳入）；None 代表不計隔間熱交換。
+        as_frame：False 時回傳 {欄名: 24 小時列表}，省下建立 DataFrame 的時間（最佳化反覆呼叫用）。
         appliance_forced：家電 id → 24 小時手動覆寫（遙控器）；None 代表依自動規則，
                           數值為運轉比例（0 = 關、1 = 全開、0.5 = 亮度 50%），不論有沒有人都照做。
         """
@@ -412,51 +433,19 @@ class LoadModel:
         has_ac = ac_unit is not None and ac_unit.enabled
         if ac_on is None:
             ac_on = self.default_ac_on(space, day_type, weather) if has_ac else [0.0] * 24
-        appliance_factors = appliance_factors or {}
-
-        # 1. 一般家電（同時是室內發熱來源）
-        appliance_w: dict[str, list[float]] = {}
-        for a in space.appliances:
-            if a.id == "air_conditioner" or a.id in self.params["shiftable_tasks"]:
-                continue
-            hourly = self.appliance_hourly(a, space, weather, day_type, ac_on if has_ac else None)
-            if a.id in appliance_factors:
-                if a.load_type is LoadType.ESSENTIAL:
-                    raise ValueError(f"{a.name} 是必要負載，任何模式都不可調整")
-                hourly = [w * f for w, f in zip(hourly, appliance_factors[a.id])]
-            forced = (appliance_forced or {}).get(a.id)
-            if forced is not None:
-                hourly = [a.power_w * f if f is not None else w for w, f in zip(hourly, forced)]
-            appliance_w[a.id] = hourly
-        # 除濕機：上面算的是「有人、冷氣沒開時可以運轉」的上限，實際運轉依室內濕度在逐時迴圈決定；
-        # 遙控器手動開關時照做
-        dehum = None
-        for aid, hourly in appliance_w.items():
-            rule = self.params["appliance_rules"].get(aid, {})
-            if rule.get("humidity_control"):
-                unit = space.get_appliance(aid)
-                forced = (appliance_forced or {}).get(aid) or [None] * 24
-                dehum = {"id": aid, "power_w": unit.power_w, "rule": rule, "forced": forced,
-                         "avail": [w / unit.power_w if unit.power_w else 0.0 for w in hourly]}
-                appliance_w[aid] = [0.0] * 24
-        base_internal = [sum(v[h] for v in appliance_w.values()) for h in range(24)]
+        prep = self._prepare(space, weather, day_type, ac_on, has_ac, appliance_factors, appliance_forced)
+        appliance_w = {k: list(v) for k, v in prep["appliance_w"].items()}   # 除濕機逐時改寫，複製一份
+        dehum = prep["dehum"]
+        base_internal = prep["base_internal"]
         internal = list(base_internal)
-
-        # 2. 冷氣
-        rows = []
-        geo = SpaceGeometry.from_space(space, self.params)
-        env, ac = self.params["envelope"], self.params["air_conditioner"]
-        temps, rhs = list(weather.temp_c), list(weather.rh_pct)
-        solar = [s * MJ_PER_HOUR_TO_W for s in weather.solar_mj_m2]
-        vert_col = f"vert_{space.orientation or 'avg'}"
-        vertical = list(weather[vert_col]) if vert_col in weather.columns else None   # 沒有日期時用平均比例
-        sol_air = sol_air_temps(temps, solar, env, vertical)
-        t_wall = effective_wall_temps(sol_air, env["wall_time_lag_h"], env["wall_decrement_factor"])
-        ppl_s, ppl_l = self.people_gains(space, day_type)
-        capacity_kj_k = self.params["thermal_mass"]["kj_per_m2_k"] * geo.floor_m2
-        ua_closed = geo.conductance_w_k(self.params, self.params["infiltration"]["ach"])
-        ua_open = geo.conductance_w_k(self.params, self.params["infiltration"]["natural_ventilation_ach"])
-        ua_exhaust = self._exhaust_conductance(space, appliance_w)
+        geo, temps, rhs, solar, vertical, t_wall = (prep[k] for k in
+                                                    ("geo", "temps", "rhs", "solar", "vertical", "t_wall"))
+        ppl_s, ppl_l, ua_exhaust, w_outs, gen_kg_h, exhaust_m3_h = (
+            prep[k] for k in ("ppl_s", "ppl_l", "ua_exhaust", "w_outs", "gen_kg_h", "exhaust_m3_h"))
+        capacity_kj_k, ua_closed, ua_open, moist_cap_kg = (
+            prep[k] for k in ("capacity_kj_k", "ua_closed", "ua_open", "moist_cap_kg"))
+        ac = self.params["air_conditioner"]
+        inf = self.params["infiltration"]
         rated_w, rated_cop = ac_rating(ac_unit, ac) if has_ac else (0.0, ac["rated_cop"])
         # 隔間熱交換：Σ UA_ij（W/K）與 Σ UA_ij × T_j(h)（相鄰房間室溫為已知，來自上一輪推演）
         ua_iz, q_iz = 0.0, [0.0] * 24
@@ -465,20 +454,14 @@ class LoadModel:
                 if nid in neighbor_temps:
                     ua_iz += ua
                     q_iz = [q + ua * t for q, t in zip(q_iz, neighbor_temps[nid])]
-        inf, hum = self.params["infiltration"], self.params["humidity"]
         rh_ac = inf["indoor_rh_pct"]
-        # 水氣平衡：室內空氣 + 家具牆面吸放濕的緩衝，相當於 buffer 倍的空氣量（kg 乾空氣）
-        moist_cap_kg = inf["air_density"] * geo.volume_m3 * hum["moisture_buffer_factor"]
-        w_outs = [humidity_ratio(t, rh) for t, rh in zip(temps, rhs)]
-        # 水氣來源：人體（潛熱 ÷ 汽化熱）＋ 活動（洗澡、煮飯的蒸氣）
-        gen_kg_h = [lat_w / inf["h_fg"] * 3600 + extra
-                    for lat_w, extra in zip(ppl_l, self.activity_moisture(space, day_type))]
-        exhaust_m3_h = [u / (inf["air_density"] * inf["cp_air"]) * 3600 for u in ua_exhaust]
+        vent_open = inf["air_density"] * geo.volume_m3 * inf["natural_ventilation_ach"]
+        vent_closed = inf["air_density"] * geo.volume_m3 * inf["ach"]
+        nv_below = ac["natural_ventilation_below_c"]
 
         def vent_kg_h(h: int) -> float:
             """這小時的換氣量（kg 乾空氣/h）：開窗或關窗的換氣 + 排風家電。"""
-            ach = inf["natural_ventilation_ach"] if temps[h] >= ac["natural_ventilation_below_c"] else inf["ach"]
-            return inf["air_density"] * (geo.volume_m3 * ach + exhaust_m3_h[h])
+            return (vent_open if temps[h] >= nv_below else vent_closed) + inf["air_density"] * exhaust_m3_h[h]
 
         def free_moisture(h: int, w_start: float, removal_kg_h: float = 0.0) -> float:
             """冷氣沒開時，這小時結束時的室內絕對濕度（一階反應，同室溫的 1R1C）。"""
@@ -514,7 +497,7 @@ class LoadModel:
                 室溫以時間常數 τ = C ÷ UA 指數接近 T_eq（家具、牆面有熱容量，不會瞬間變溫）
             室外夠熱或適中時住戶會開窗（UA 大）；太冷時關窗；排油煙機、抽風機運轉時換氣再增加。
             回傳（這小時平均室溫, 小時結束時室溫）。"""
-            ua_out = (ua_open if temps[h] >= ac["natural_ventilation_below_c"] else ua_closed) + ua_exhaust[h]
+            ua_out = (ua_open if temps[h] >= nv_below else ua_closed) + ua_exhaust[h]
             base = (temps[h] + t_wall[h]) / 2
             if ua_out <= 0 or capacity_kj_k <= 0:   # 沒有面積的空間（公共設備）不計室溫
                 return base, base
@@ -526,10 +509,12 @@ class LoadModel:
             t_avg = t_eq + (t_start - t_eq) * tau_h * (1 - decay)   # 指數曲線在一小時內的平均
             return t_avg, t_end
 
-        # 跑兩輪：第一輪求出 23 時結束時的室溫，作為 0 時的起始狀態（每天週期性重複）
+        # 跑兩輪：第一輪求出 23 時結束時的室溫，作為 0 時的起始狀態（每天週期性重複）；
+        # 只有第二輪記錄逐時明細（第一輪只用來決定起始狀態）
         t_room = (temps[23] + t_wall[23]) / 2
         w_room = w_outs[23]
-        for _ in range(2):
+        no_load = CoolingLoad()
+        for record in (False, True):
             rows = []
             for h in range(24):
                 on = ac_on[h] if has_ac else 0.0
@@ -539,25 +524,28 @@ class LoadModel:
                     appliance_w[dehum["id"]][h] = dehum["power_w"] * f_dehum
                     internal[h] = base_internal[h] + dehum["power_w"] * f_dehum + removal * inf["h_fg"] / 3600
                 t_free, t_free_end = free_running(h, t_room)
-                pulldown = latent_pulldown = 0.0
                 w_target = humidity_ratio(setpoints[h], rh_ac)
-                if on > 0 and t_room > setpoints[h]:
-                    pulldown = capacity_kj_k * (t_room - setpoints[h]) / 3.6  # kJ → Wh（一小時平均 W）
-                args = (geo, self.params, temps[h], rhs[h], solar[h], t_wall[h], setpoints[h],
-                        ppl_s[h], ppl_l[h], internal[h], on, pulldown, vertical[h] if vertical is not None else None)
-                iz_w = on * (q_iz[h] - ua_iz * setpoints[h])     # 鄰房比設定溫度熱，熱量經隔間牆傳入
-                load = cooling_load(*args, interzone_w=iz_w)
-                if on > 0 and w_room > w_target:
-                    # 累積的水氣（含家具牆面吸附）：冷氣先處理顯熱與穩態負載，剩下的能力才用來除濕，
-                    # 沒除完的留到下一小時（實際上要數小時才會降到目標濕度）
-                    cap_factor, _ = performance_factors(temps[h], indoor_wet_bulb(setpoints[h], rh_ac, ac), ac)
-                    spare = max(0.0, rated_w * rated_cop * cap_factor * on - load.total)
-                    latent_pulldown = min(moist_cap_kg * (w_room - w_target) * inf["h_fg"] / 3600, spare)
-                    load = cooling_load(*args, latent_pulldown, interzone_w=iz_w)
-                if not has_ac or on <= 0:
-                    load = CoolingLoad()  # 冷氣沒開就沒有冷房負載（只記錄耗電為 0）
-                result = ac_power(load.total, rated_w, temps[h], setpoints[h], ac, on, rated_cop, rh_ac)
-                cooling = on > 0 and load.total > 0
+                if on > 0:
+                    pulldown = capacity_kj_k * (t_room - setpoints[h]) / 3.6 if t_room > setpoints[h] else 0.0
+                    args = (geo, self.params, temps[h], rhs[h], solar[h], t_wall[h], setpoints[h],
+                            ppl_s[h], ppl_l[h], internal[h], on, pulldown,
+                            vertical[h] if vertical is not None else None)
+                    iz_w = on * (q_iz[h] - ua_iz * setpoints[h])     # 鄰房比設定溫度熱，熱量經隔間牆傳入
+                    load = cooling_load(*args, interzone_w=iz_w)
+                    if w_room > w_target:
+                        # 累積的水氣（含家具牆面吸附）：冷氣先處理顯熱與穩態負載，剩下的能力才用來除濕，
+                        # 沒除完的留到下一小時（實際上要數小時才會降到目標濕度）
+                        cap_factor, _ = performance_factors(temps[h], indoor_wet_bulb(setpoints[h], rh_ac, ac), ac)
+                        spare = max(0.0, rated_w * rated_cop * cap_factor * on - load.total)
+                        latent_pulldown = min(moist_cap_kg * (w_room - w_target) * inf["h_fg"] / 3600, spare)
+                        load = cooling_load(*args, latent_pulldown, interzone_w=iz_w)
+                    if not has_ac:
+                        load = no_load
+                else:
+                    load = no_load    # 冷氣沒開就沒有冷房負載（只記錄耗電為 0）
+                total = load.total
+                result = ac_power(total, rated_w, temps[h], setpoints[h], ac, on, rated_cop, rh_ac)
+                cooling = on > 0 and total > 0
                 t_ac = self._cooled_room_temp(load, result, setpoints[h], t_room, ua_closed + ua_iz, capacity_kj_k, on) \
                     if cooling else t_free
                 t_room = t_ac if on >= 0.5 and cooling else t_free_end
@@ -567,19 +555,22 @@ class LoadModel:
                     w_room = max(w_target, w_room - removed_kg / moist_cap_kg) if w_room > w_target else w_room
                 else:
                     w_room = free_moisture(h, w_room, removal)
+                if not record:
+                    continue
+                t_felt = t_ac if cooling else t_free          # 使用者在這小時感受到的室溫
                 rows.append({
                     "hour": h,
                     "setpoint_c": setpoints[h] if on > 0 else None,
                     "ac_on": on,
-                    "room_temp_c": t_ac if cooling else t_free,   # 使用者在這小時感受到的室溫
+                    "room_temp_c": t_felt,
                     # 這小時經隔間牆從鄰房傳入的熱（W，以實際室溫計；推演引擎用來檢查能量守恆）
-                    "interzone_w": q_iz[h] - ua_iz * (t_ac if cooling else t_free),
-                    "room_rh_pct": relative_humidity(t_ac if cooling else t_free, (w_start + w_room) / 2),
+                    "interzone_w": q_iz[h] - ua_iz * t_felt,
+                    "room_rh_pct": relative_humidity(t_felt, (w_start + w_room) / 2),
                     **{f"load_{k}": v for k, v in load.as_dict().items()},
-                    "load_total_w": load.total,
+                    "load_total_w": total,
                     # 能力不足：只計「連穩態負載都處理不了」的部分；
                     # 蓄熱沒移除完的部分會轉到下一小時的 pull-down，不重複計算
-                    "unmet_w": max(0.0, load.total - load.pulldown - result.delivered_w),
+                    "unmet_w": max(0.0, total - load.pulldown - result.delivered_w),
                     "cop": result.cop,
                     "part_load": result.part_load,
                     "air_conditioner": result.power_w,
@@ -588,7 +579,76 @@ class LoadModel:
         # 一次建立整張表（逐欄加入 DataFrame 很慢，最佳化時每天會呼叫數百次）
         columns = {key: [row[key] for row in rows] for key in rows[0]}
         columns.update(appliance_w)
-        return pd.DataFrame(columns)
+        return pd.DataFrame(columns) if as_frame else columns
+
+    def _prepare(self, space: Space, weather: pd.DataFrame, day_type: str, ac_on: list[float], has_ac: bool,
+                 appliance_factors: dict | None, appliance_forced: dict | None) -> dict:
+        """逐時迴圈前、與設定溫度無關的部分：一般家電耗電、日射與牆體溫度、人體發熱、換氣、水氣來源。
+        最佳化搜尋設定溫度時，同一空間同一天會呼叫數百次，這部分完全相同，快取起來只算一次（D3）。"""
+        key = (space.id, id(weather), day_type, tuple(ac_on),
+               repr(sorted((appliance_factors or {}).items())), repr(sorted((appliance_forced or {}).items())))
+        hit = self._prep_cache.get(key)
+        if hit is not None and hit[0] is weather:
+            return hit[1]
+        appliance_factors = appliance_factors or {}
+
+        # 1. 一般家電（同時是室內發熱來源）
+        appliance_w: dict[str, list[float]] = {}
+        for a in space.appliances:
+            if a.id == "air_conditioner" or a.id in self.params["shiftable_tasks"]:
+                continue
+            hourly = self.appliance_hourly(a, space, weather, day_type, ac_on if has_ac else None)
+            if a.id in appliance_factors:
+                if a.load_type is LoadType.ESSENTIAL:
+                    raise ValueError(f"{a.name} 是必要負載，任何模式都不可調整")
+                hourly = [w * f for w, f in zip(hourly, appliance_factors[a.id])]
+            forced = (appliance_forced or {}).get(a.id)
+            if forced is not None:
+                hourly = [a.power_w * f if f is not None else w for w, f in zip(hourly, forced)]
+            appliance_w[a.id] = hourly
+        # 除濕機：上面算的是「有人、冷氣沒開時可以運轉」的上限，實際運轉依室內濕度在逐時迴圈決定；
+        # 遙控器手動開關時照做
+        dehum = None
+        for aid, hourly in appliance_w.items():
+            rule = self.params["appliance_rules"].get(aid, {})
+            if rule.get("humidity_control"):
+                unit = space.get_appliance(aid)
+                forced = (appliance_forced or {}).get(aid) or [None] * 24
+                dehum = {"id": aid, "power_w": unit.power_w, "rule": rule, "forced": forced,
+                         "avail": [w / unit.power_w if unit.power_w else 0.0 for w in hourly]}
+                appliance_w[aid] = [0.0] * 24
+        base_internal = [sum(v[h] for v in appliance_w.values()) for h in range(24)]
+
+        # 2. 外殼、日射、人體、換氣、水氣
+        geo = SpaceGeometry.from_space(space, self.params)
+        env, inf, hum = self.params["envelope"], self.params["infiltration"], self.params["humidity"]
+        temps, rhs = list(weather.temp_c), list(weather.rh_pct)
+        solar = [x * MJ_PER_HOUR_TO_W for x in weather.solar_mj_m2]
+        vert_col = f"vert_{space.orientation or 'avg'}"
+        vertical = list(weather[vert_col]) if vert_col in weather.columns else None   # 沒有日期時用平均比例
+        sol_air = sol_air_temps(temps, solar, env, vertical)
+        t_wall = effective_wall_temps(sol_air, env["wall_time_lag_h"], env["wall_decrement_factor"])
+        ppl_s, ppl_l = self.people_gains(space, day_type)
+        ua_exhaust = self._exhaust_conductance(space, appliance_w)
+        prep = {
+            "appliance_w": appliance_w, "dehum": dehum, "base_internal": base_internal, "geo": geo,
+            "temps": temps, "rhs": rhs, "solar": solar, "vertical": vertical, "t_wall": t_wall,
+            "ppl_s": ppl_s, "ppl_l": ppl_l, "ua_exhaust": ua_exhaust,
+            "capacity_kj_k": self.params["thermal_mass"]["kj_per_m2_k"] * geo.floor_m2,
+            "ua_closed": geo.conductance_w_k(self.params, inf["ach"]),
+            "ua_open": geo.conductance_w_k(self.params, inf["natural_ventilation_ach"]),
+            # 水氣平衡：室內空氣 + 家具牆面吸放濕的緩衝，相當於 buffer 倍的空氣量（kg 乾空氣）
+            "moist_cap_kg": inf["air_density"] * geo.volume_m3 * hum["moisture_buffer_factor"],
+            "w_outs": [humidity_ratio(t, rh) for t, rh in zip(temps, rhs)],
+            # 水氣來源：人體（潛熱 ÷ 汽化熱）＋ 活動（洗澡、煮飯的蒸氣）
+            "gen_kg_h": [lat_w / inf["h_fg"] * 3600 + extra
+                         for lat_w, extra in zip(ppl_l, self.activity_moisture(space, day_type))],
+            "exhaust_m3_h": [u / (inf["air_density"] * inf["cp_air"]) * 3600 for u in ua_exhaust],
+        }
+        if len(self._prep_cache) > 512:
+            self._prep_cache.clear()
+        self._prep_cache[key] = (weather, prep)      # 保留 weather 參考，id 不會被重複使用
+        return prep
 
     def _exhaust_conductance(self, space: Space, appliance_w: dict[str, list[float]]) -> list[float]:
         """排風家電（排油煙機、抽風機）運轉時帶走室內熱量的等效熱傳係數（W/K）。"""

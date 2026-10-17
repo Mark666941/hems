@@ -24,6 +24,7 @@ import pandas as pd
 
 from core.load_model import place_task, task_hourly
 from core.models import LoadType, Space
+from core.parallel import parallel_map
 from core.schedule import day_type_for
 from core.simulator import ControlPlan, SimulationResult, Simulator, load_baseline_plan
 
@@ -286,9 +287,9 @@ class Optimizer:
 
     def _space_objective(self, space, weather, day_type, prices, setpoints, ac_on, factors,
                          ctx: ComfortContext, schedule: ModeSchedule, prefs: dict,
-                         neighbor_temps: dict | None = None) -> tuple[float, pd.DataFrame]:
+                         neighbor_temps: dict | None = None) -> tuple[float, dict]:
         df = self.sim.load_model.space_hourly(space, weather, day_type, setpoints, ac_on, factors,
-                                              neighbor_temps=neighbor_temps)
+                                              neighbor_temps=neighbor_temps, as_frame=False)
         cost = sum(w / 1000 * price for w, price in zip(df["air_conditioner"], prices))
         penalty = 0.0
         for h, temp in enumerate(df["room_temp_c"]):
@@ -518,9 +519,9 @@ class Optimizer:
         from core.simulator import MonthResult
 
         days = [date(year, month, d) for d in range(1, calendar.monthrange(year, month)[1] + 1)]
-        scenarios = {"基準（一般習慣）": [self.sim.run(d, plan_id, self.baseline_plan) for d in days]}
-        for mid in MODE_ORDER:
-            scenarios[self.modes[mid].name] = [self.optimize(d, mid, plan_id).result for d in days]
+        per_day = parallel_map(_month_day, days, self, plan_id)   # 每天分給不同 CPU 核心（D3）
+        names = ["基準（一般習慣）", *(self.modes[mid].name for mid in MODE_ORDER)]
+        scenarios = {name: [results[i] for results in per_day] for i, name in enumerate(names)}
 
         rows = []
         for name, day_results in scenarios.items():
@@ -536,6 +537,12 @@ class Optimizer:
         return pd.DataFrame(rows), scenarios
 
 
+def _month_day(day: date, opt: Optimizer, plan_id: str) -> list[SimulationResult]:
+    """整月分析的一天：基準與四種模式的推演結果（模組層級函式，才能交給其他程序平行計算）。"""
+    return [opt.sim.run(day, plan_id, opt.baseline_plan),
+            *(opt.optimize(day, mid, plan_id).result for mid in MODE_ORDER)]
+
+
 # ---------- 命令列 ----------
 
 def main() -> None:
@@ -543,7 +550,7 @@ def main() -> None:
 
     parser = argparse.ArgumentParser(description="HEMS 四種模式最佳化與比較")
     parser.add_argument("day", nargs="?", help="日期，例如 2026-07-20；省略時跑夏、冬代表日")
-    parser.add_argument("--month", help="整月比較，例如 2026-07（約 30 秒）")
+    parser.add_argument("--month", help="整月比較，例如 2026-07（約 3 秒，多核心平行）")
     parser.add_argument("--plan", default="tou_2", help="電價方案：tou_2 / tou_3")
     parser.add_argument("--no-plot", action="store_true")
     args = parser.parse_args()

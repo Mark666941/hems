@@ -26,11 +26,13 @@ app.py（每次使用者操作都會從頭執行一次）
 | 層 | 模組 | 職責 |
 |---|---|---|
 | 輸入 | `core/models.py` | 空間範本、家電、房屋、成員的資料結構；`house_from_config()` 由範本組房屋 |
-| 輸入 | `core/data_source.py` | 資料來源介面：天氣（中央氣象署 CSV）、電表（CSV）；模擬與感測器走同一介面 |
+| 輸入 | `core/data_source.py` | 資料來源介面：天氣（中央氣象署 CSV／Open-Meteo 任一地點）、電表（CSV）；模擬與感測器走同一介面 |
 | 輸入 | `core/tariff.py` | 台電電價：時段、費率、離峰日、月電費（時間電價、累進） |
 | 模擬 | `core/schedule.py` | 作息 → 每個空間每小時的人數與活動 |
-| 模擬 | `core/load_model.py` | 冷房負載、COP、冷氣與其他家電耗電、室溫 |
-| 模擬 | `core/simulator.py` | 24 小時推演：`ControlPlan` → `SimulationResult`；`run_month()` |
+| 模擬 | `core/load_model.py` | 冷房負載、冷氣性能曲線、家電耗電、室溫與室內濕度、隔間熱交換；與設定溫度無關的部分快取（`_prepare`） |
+| 模擬 | `core/solar.py` | 太陽位置、直射／散射分離、各方位牆面日射 |
+| 模擬 | `core/simulator.py` | 24 小時推演：`ControlPlan` → `SimulationResult`；`run_spaces()` 隔間熱交換迭代；`run_month()` |
+| 效能 | `core/parallel.py` | 多核心平行（整月分析、整月推演每天一個工作）；`HEMS_WORKERS=1` 關閉 |
 | 最佳化 | `core/optimizer.py` | 四種模式（modes.json 參數）的最佳化 |
 | 分析 | `core/metrics.py` | 指標、PMV/PPD、模式比較、節省建議、校正（ASHRAE Guideline 14） |
 | 資料 | `core/storage.py` | SQLAlchemy：帳號、設定檔、家電使用紀錄 |
@@ -106,7 +108,7 @@ python -m ruff check .                 # 程式碼檢查（設定在 ruff.toml�
 | 指令 | 用途 |
 |---|---|
 | `python -m core.simulator [日期]` | 推演標配房型（省略日期時跑夏、冬代表日），輸出 CSV、PNG 到 output/ |
-| `python -m core.metrics --month 2026-07` | 整月分析與節省建議報告（Markdown，約 30 秒） |
+| `python -m core.metrics --month 2026-07` | 整月分析與節省建議報告（Markdown，約 3 秒） |
 | `python -m core.metrics --calibrate data/meter/demo_synthetic_2026-07.csv` | 模型校正（ASHRAE Guideline 14） |
 | `python scripts/ml_forecast.py` | B1b 混合用電預測模型比較（報告與圖輸出到 docs/） |
 | `python scripts/fetch_taipower_open_data.py` | 下載台電公開用電資料 |

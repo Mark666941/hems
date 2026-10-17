@@ -22,6 +22,7 @@ import pandas as pd
 from core.data_source import METER_COLUMNS, CwaCsvWeatherSource, MeterSource, WeatherSource
 from core.load_model import LoadModel, place_task, task_hourly
 from core.models import House, LoadType, load_house
+from core.parallel import parallel_map
 from core.schedule import Schedule, day_type_for
 from core.tariff import Tariff
 
@@ -168,14 +169,15 @@ class Simulator:
         self.load_model = load_model or LoadModel(self.house, self.schedule)
         self.weather = weather or CwaCsvWeatherSource()
         self.tariff = tariff or Tariff()
+        self._price_cache: dict[tuple, list[float]] = {}
 
     def run_spaces(self, weather: pd.DataFrame, day_type: str, control: ControlPlan,
-                   neighbor_temps: dict[str, list[float]] | None = None) -> dict[str, pd.DataFrame]:
-        """各空間逐時結果。房間之間有隔間熱交換：第一輪各自計算（或用給定的鄰房室溫），
+                   neighbor_temps: dict[str, list[float]] | None = None) -> dict[str, dict[str, list]]:
+        """各空間逐時結果（{欄名: 24 小時列表}）。房間之間有隔間熱交換：第一輪各自計算（或用給定的鄰房室溫），
         之後以上一輪的鄰房室溫重算（Jacobi 迭代），直到室溫變化小於容許值。"""
         iz = self.load_model.params["interzone"]
         temps = neighbor_temps
-        frames: dict[str, pd.DataFrame] = {}
+        frames: dict[str, dict[str, list]] = {}
         for _ in range(iz["coupling_iterations"] if self.load_model.interzone_ua else 1):
             frames = {space.id: self.load_model.space_hourly(
                 space, weather, day_type,
@@ -184,6 +186,7 @@ class Simulator:
                 appliance_factors=control.appliance_factors.get(space.id),
                 appliance_forced=control.appliance_forced.get(space.id),
                 neighbor_temps=temps,
+                as_frame=False,
             ) for space in self.house.spaces}
             new = {s.id: list(frames[s.id]["room_temp_c"]) for s in self.house.spaces if s.area_ping > 0}
             if temps is not None and max(abs(a - b) for sid in new for a, b in zip(new[sid], temps[sid])) \
@@ -205,14 +208,14 @@ class Simulator:
         for space in self.house.spaces:
             df = frames[space.id]
             for a in space.appliances:
-                if a.id not in df.columns:
+                if a.id not in df:
                     continue  # 可移轉家電另外處理
                 category = categorize(a.id, a.load_type)
                 for h, w in enumerate(df[a.id]):
                     records.append((h, space.id, space.name, a.id, a.name, a.load_type.label, category, w / 1000))
             if space.area_ping > 0:   # 公共設備沒有面積，不記錄室內狀態
-                part = df[["hour", "setpoint_c", "ac_on", "room_temp_c", "room_rh_pct", "load_total_w", "unmet_w",
-                           "cop", "interzone_w"]].copy()
+                part = pd.DataFrame({k: df[k] for k in ("hour", "setpoint_c", "ac_on", "room_temp_c", "room_rh_pct",
+                                                        "load_total_w", "unmet_w", "cop", "interzone_w")})
                 part.insert(1, "space_id", space.id)
                 part.insert(2, "space", space.name)
                 climate.append(part)
@@ -248,6 +251,14 @@ class Simulator:
         hourly["cost"] = hourly["kwh"] * hourly["price"]
         return hourly
 
+    def energy_cost(self, result: SimulationResult, plan_id: str) -> float:
+        """同樣的用電換成另一個電價方案的流動電費（只需逐時用電 × 電價，比 reprice 快得多）。"""
+        key = (result.day, plan_id)
+        prices = self._price_cache.get(key)
+        if prices is None:
+            prices = self._price_cache[key] = list(self.tariff.hourly_prices(result.day, plan_id)["price"])
+        return sum(k * p for k, p in zip(result.hourly["kwh"], prices))
+
     def reprice(self, result: SimulationResult, plan_id: str) -> SimulationResult:
         """同樣的用電，換成另一個電價方案計價（用電行為不變時，不必重新推演）。"""
         weather = result.hourly[["hour", "temp_c", "rh_pct"]]
@@ -260,7 +271,12 @@ class Simulator:
     def run_month(self, year: int, month: int, plan_id: str = "tou_2",
                   control: ControlPlan | None = None) -> MonthResult:
         days = [date(year, month, d) for d in range(1, calendar.monthrange(year, month)[1] + 1)]
-        return MonthResult(self, [self.run(d, plan_id, control) for d in days])
+        return MonthResult(self, parallel_map(_run_day, days, self, plan_id, control))   # 每天分給不同核心
+
+
+def _run_day(day: date, sim: Simulator, plan_id: str, control: ControlPlan | None) -> SimulationResult:
+    """模組層級函式，才能交給其他程序平行計算。"""
+    return sim.run(day, plan_id, control)
 
 
 class SimulatedMeterSource(MeterSource):
@@ -312,7 +328,7 @@ class MonthResult:
         rows = []
         for plan_id, plan in tariff.plans.items():
             if plan["type"] == "time_of_use":
-                energy = sum(self.simulator.reprice(r, plan_id).energy_cost for r in self.days)
+                energy = sum(self.simulator.energy_cost(r, plan_id) for r in self.days)
                 bill = tariff.tou_monthly_bill(plan_id, energy, self.total_kwh)
             else:
                 total = tariff.progressive_bill(self.total_kwh, self.is_summer)
