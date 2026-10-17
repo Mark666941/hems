@@ -193,7 +193,8 @@ class Simulator:
                 for h, w in enumerate(df[a.id]):
                     records.append((h, space.id, space.name, a.id, a.name, a.load_type.label, category, w / 1000))
             if space.area_ping > 0:   # 公共設備沒有面積，不記錄室內狀態
-                part = df[["hour", "setpoint_c", "ac_on", "room_temp_c", "load_total_w", "unmet_w", "cop"]].copy()
+                part = df[["hour", "setpoint_c", "ac_on", "room_temp_c", "room_rh_pct", "load_total_w", "unmet_w",
+                           "cop"]].copy()
                 part.insert(1, "space_id", space.id)
                 part.insert(2, "space", space.name)
                 climate.append(part)

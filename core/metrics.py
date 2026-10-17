@@ -177,7 +177,10 @@ class Analyzer:
                     continue
                 t = climate.loc[h, "room_temp_c"]
                 cooling = climate.loc[h, "ac_on"] > 0 and climate.loc[h, "load_total_w"] > 0
-                rh = rh_ac if cooling else indoor_rh(t, weather.loc[h, "temp_c"], weather.loc[h, "rh_pct"])
+                if "room_rh_pct" in climate.columns:      # 模擬的室內濕度（水氣平衡，A4）
+                    rh = climate.loc[h, "room_rh_pct"]
+                else:
+                    rh = rh_ac if cooling else indoor_rh(t, weather.loc[h, "temp_c"], weather.loc[h, "rh_pct"])
                 vel = p["air_speed_m_s"]["ac_on" if cooling else "ac_off"]
                 pmv, ppd = pmv_ppd(t, t, vel, rh, p["met_awake"], clo)
                 people += awake[h]

@@ -282,3 +282,20 @@ def room_temperature(result: SimulationResult, space_id: str, ideal: list[float]
                                                           range=[[1, 0], [1, 0], [4, 3]]), legend=None),
         tooltip=[alt.Tooltip("hour:Q", title="時"), "項目:N", alt.Tooltip("°C:Q", format=".1f")])
     return (band + lines).properties(height=300)
+
+
+def room_humidity(result: SimulationResult, space_id: str) -> alt.LayerChart:
+    """某空間的室內與室外相對濕度；綠色帶為一般建議的室內濕度 40–60%（A4 水氣平衡）。"""
+    climate = result.climate[result.climate["space_id"] == space_id].set_index("hour")
+    df = pd.DataFrame({"hour": HOURS, "室內": climate["room_rh_pct"].values, "室外": result.hourly["rh_pct"].values})
+    band = alt.Chart(pd.DataFrame({"low": [40], "high": [60]})).mark_rect(color="#2fa36b", opacity=0.12).encode(
+        y=alt.Y("low:Q", title="相對濕度（%）", scale=alt.Scale(domain=[20, 100])), y2="high:Q")
+    long = df.melt("hour", var_name="項目", value_name="%")
+    lines = alt.Chart(long).mark_line(strokeWidth=2, point=alt.OverlayMarkDef(size=25)).encode(
+        x=_hour_axis(), y=alt.Y("%:Q", scale=alt.Scale(domain=[20, 100])),
+        color=alt.Color("項目:N", scale=alt.Scale(domain=["室內", "室外"], range=["#2a78d6", "#8a8a8a"]),
+                        legend=alt.Legend(orient="top", title=None)),
+        strokeDash=alt.StrokeDash("項目:N", scale=alt.Scale(domain=["室內", "室外"], range=[[1, 0], [4, 3]]),
+                                  legend=None),
+        tooltip=[alt.Tooltip("hour:Q", title="時"), "項目:N", alt.Tooltip("%:Q", title="相對濕度（%）", format=".0f")])
+    return (band + lines).properties(height=240)

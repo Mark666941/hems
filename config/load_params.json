@@ -45,6 +45,12 @@
     "_說明": "ach：門窗關閉時的換氣次數（次/h，估計）；natural_ventilation_ach：冷氣沒開、開窗通風時的換氣次數（估計）；indoor_rh_pct：冷氣運轉時室內相對濕度目標。"
   },
 
+  "humidity": {
+    "moisture_buffer_factor": 3,
+    "activity_moisture_kg_h": {"shower": 1.2, "cook": 0.4},
+    "_說明": "室內水氣平衡：水氣來源（人體、煮飯、洗澡的潛熱 ÷ 汽化熱）＋ 換氣帶入 − 冷氣或除濕機移除。moisture_buffer_factor：家具、牆面、布料吸放濕的緩衝，相當於室內空氣量的幾倍（估計）。取 3 倍時，潮濕房間開冷氣約 1 小時降到目標濕度，與一般使用經驗相符；冷氣開機時需先除掉這些累積的水氣（latent_pulldown），只用處理完顯熱後剩餘的能力。activity_moisture_kg_h：活動額外產生的水氣（每人每小時，依實際活動時間比例計）：洗澡約 15 分鐘產生 0.3 kg 熱水蒸氣、煮飯的蒸氣（估計，參考 IEA Annex 14 家庭水氣產生量：洗澡每次 0.2–0.4 kg、烹飪每天 0.5–1.5 kg）。"
+  },
+
   "thermal_mass": {
     "kj_per_m2_k": 60,
     "_說明": "室內家具與牆體表層的有效熱容量（kJ/m²·K，以地板面積計，估計）。冷氣剛開或設定溫度調降時，需額外移除這部分蓄熱（pull-down 負載）。"
@@ -88,7 +94,7 @@
   },
 
   "appliance_rules": {
-    "_說明": "非冷氣家電的運轉規則。always：全天運轉；activity：空間中有人進行指定活動時運轉，duty 為運轉時間比例；awake 代表任何清醒活動。條件：outdoor_below_c（室外低於此溫度才開）、outdoor_rh_above（室外濕度高於此值才開）、not_cooling（該空間冷氣沒開才開）。exhaust_m3_h：排風量（m³/h），運轉時增加空間換氣，排油煙機約 10 m³/min、浴室抽風機約 1.5 m³/min（典型產品規格）。",
+    "_說明": "非冷氣家電的運轉規則。always：全天運轉；activity：空間中有人進行指定活動時運轉，duty 為運轉時間比例；awake 代表任何清醒活動。條件：outdoor_below_c（室外低於此溫度才開）、outdoor_rh_above（室外濕度高於此值才開）、not_cooling（該空間冷氣沒開才開）；humidity_control：依室內相對濕度運轉（除濕機：室內高於 target_rh_pct 才開，只運轉到剛好達標所需的時間；removal_l_per_day 為額定除濕能力 公升／日，約 12 公升級機種）。exhaust_m3_h：排風量（m³/h），運轉時增加空間換氣，排油煙機約 10 m³/min、浴室抽風機約 1.5 m³/min（典型產品規格）。",
     "refrigerator": {"type": "always"},
     "router":       {"type": "always"},
     "camera":       {"type": "always"},
@@ -100,7 +106,8 @@
     "microwave":    {"type": "activity", "activities": ["meal"], "duty": 0.1},
     "exhaust_fan":  {"type": "activity", "activities": ["shower", "wash"], "exhaust_m3_h": 90},
     "bath_heater":  {"type": "activity", "activities": ["shower"], "outdoor_below_c": 20},
-    "dehumidifier": {"type": "activity", "activities": "awake", "outdoor_rh_above": 75, "not_cooling": true}
+    "dehumidifier": {"type": "activity", "activities": "awake", "not_cooling": true,
+                     "humidity_control": true, "target_rh_pct": 60, "removal_l_per_day": 12}
   },
 
   "shiftable_tasks": {

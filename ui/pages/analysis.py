@@ -126,6 +126,9 @@ def _climate(ctx: AppContext) -> None:
     c[2].metric("PMV 舒適比例", f"{m['PMV舒適比例(%)']:.0f}%", help="ISO 7730：|PMV| ≤ 0.5 的清醒人·時比例")
     c[3].metric("平均 PPD", f"{m['平均PPD(%)']:.1f}%", help="預測不滿意百分比，最低 5%")
     st.caption("以上舒適指標為全屋有冷氣空間的合計。冬季系統沒有暖氣，室溫主要受天氣影響。")
+    st.markdown(f"**{ac_spaces[space_id]} 逐時濕度**：綠色帶為建議室內濕度 40–60%。冷氣運轉時會順便除濕"
+                "（開機那小時要先除掉累積的水氣）；冷氣沒開時，除濕機在室內濕度高於 60% 且有人時運轉。")
+    st.altair_chart(charts.room_humidity(result, space_id), width="stretch")
 
 
 def _whatif(ctx: AppContext) -> None:

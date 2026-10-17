@@ -43,6 +43,12 @@ def humidity_ratio(t_c: float, rh_pct: float, p_kpa: float = 101.325) -> float:
     return 0.622 * pw / (p_kpa - pw)
 
 
+def relative_humidity(t_c: float, w: float, p_kpa: float = 101.325) -> float:
+    """絕對濕度 → 相對濕度（%），上限 100。"""
+    pw = w * p_kpa / (0.622 + w)
+    return min(100.0, 100 * pw / saturation_pressure_kpa(t_c))
+
+
 # ---------- 空間幾何 ----------
 
 @dataclass
@@ -90,11 +96,12 @@ class CoolingLoad:
     infiltration_sensible: float = 0.0
     infiltration_latent: float = 0.0
     pulldown: float = 0.0
+    latent_pulldown: float = 0.0   # 冷氣開機時移除室內（含家具、牆面）累積水氣的潛熱
 
     @property
     def latent(self) -> float:
         # 冷氣只會除濕不會加濕，潛熱合計不小於 0
-        return max(0.0, self.people_latent + self.infiltration_latent)
+        return max(0.0, self.people_latent + self.infiltration_latent + self.latent_pulldown)
 
     @property
     def sensible(self) -> float:
@@ -139,6 +146,7 @@ def cooling_load(
     on_fraction: float = 1.0,
     pulldown_w: float = 0.0,
     vertical_w_m2: float | None = None,
+    latent_pulldown_w: float = 0.0,
 ) -> CoolingLoad:
     """計算某空間某小時的冷房負載。on_fraction 為冷氣這小時運轉的時間比例；
     人體與家電發熱已是一小時平均值，不再乘比例。
@@ -159,6 +167,7 @@ def cooling_load(
         infiltration_sensible=f * inf["air_density"] * inf["cp_air"] * airflow_m3_s * (t_out - t_set),
         infiltration_latent=f * inf["air_density"] * airflow_m3_s * inf["h_fg"] * (w_out - w_in),
         pulldown=pulldown_w,
+        latent_pulldown=latent_pulldown_w,
     )
 
 
@@ -297,6 +306,19 @@ class LoadModel:
             latent[row.hour] += gain["latent"] * factor
         return sensible, latent
 
+    def activity_moisture(self, space: Space, day_type: str) -> list[float]:
+        """每小時活動額外產生的水氣（kg/h）：洗澡的熱水蒸氣、煮飯的蒸氣（人體本身的水氣在潛熱裡）。"""
+        key = ("moisture", space.id, day_type)
+        if key not in self._people_cache:
+            rates = self.params["humidity"]["activity_moisture_kg_h"]
+            log = self.schedule.activity_log(day_type)
+            log = log[(log["space"] == space.id) & (log["activity"].isin(list(rates)))]
+            hourly = [0.0] * 24
+            for row in log.itertuples():
+                hourly[row.hour] += rates[row.activity] * row.fraction
+            self._people_cache[key] = (hourly, [])
+        return list(self._people_cache[key][0])
+
     # ----- 一般家電 -----
 
     def _activities(self, spec) -> set[str]:
@@ -374,7 +396,19 @@ class LoadModel:
             if forced is not None:
                 hourly = [a.power_w * f if f is not None else w for w, f in zip(hourly, forced)]
             appliance_w[a.id] = hourly
-        internal = [sum(v[h] for v in appliance_w.values()) for h in range(24)]
+        # 除濕機：上面算的是「有人、冷氣沒開時可以運轉」的上限，實際運轉依室內濕度在逐時迴圈決定；
+        # 遙控器手動開關時照做
+        dehum = None
+        for aid, hourly in appliance_w.items():
+            rule = self.params["appliance_rules"].get(aid, {})
+            if rule.get("humidity_control"):
+                unit = space.get_appliance(aid)
+                forced = (appliance_forced or {}).get(aid) or [None] * 24
+                dehum = {"id": aid, "power_w": unit.power_w, "rule": rule, "forced": forced,
+                         "avail": [w / unit.power_w if unit.power_w else 0.0 for w in hourly]}
+                appliance_w[aid] = [0.0] * 24
+        base_internal = [sum(v[h] for v in appliance_w.values()) for h in range(24)]
+        internal = list(base_internal)
 
         # 2. 冷氣
         rows = []
@@ -392,7 +426,48 @@ class LoadModel:
         ua_open = geo.conductance_w_k(self.params, self.params["infiltration"]["natural_ventilation_ach"])
         ua_exhaust = self._exhaust_conductance(space, appliance_w)
         rated_w, rated_cop = ac_rating(ac_unit, ac) if has_ac else (0.0, ac["rated_cop"])
-        rh_ac = self.params["infiltration"]["indoor_rh_pct"]
+        inf, hum = self.params["infiltration"], self.params["humidity"]
+        rh_ac = inf["indoor_rh_pct"]
+        # 水氣平衡：室內空氣 + 家具牆面吸放濕的緩衝，相當於 buffer 倍的空氣量（kg 乾空氣）
+        moist_cap_kg = inf["air_density"] * geo.volume_m3 * hum["moisture_buffer_factor"]
+        w_outs = [humidity_ratio(t, rh) for t, rh in zip(temps, rhs)]
+        # 水氣來源：人體（潛熱 ÷ 汽化熱）＋ 活動（洗澡、煮飯的蒸氣）
+        gen_kg_h = [lat_w / inf["h_fg"] * 3600 + extra
+                    for lat_w, extra in zip(ppl_l, self.activity_moisture(space, day_type))]
+        exhaust_m3_h = [u / (inf["air_density"] * inf["cp_air"]) * 3600 for u in ua_exhaust]
+
+        def vent_kg_h(h: int) -> float:
+            """這小時的換氣量（kg 乾空氣/h）：開窗或關窗的換氣 + 排風家電。"""
+            ach = inf["natural_ventilation_ach"] if temps[h] >= ac["natural_ventilation_below_c"] else inf["ach"]
+            return inf["air_density"] * (geo.volume_m3 * ach + exhaust_m3_h[h])
+
+        def free_moisture(h: int, w_start: float, removal_kg_h: float = 0.0) -> float:
+            """冷氣沒開時，這小時結束時的室內絕對濕度（一階反應，同室溫的 1R1C）。"""
+            m = vent_kg_h(h)
+            if m <= 0 or moist_cap_kg <= 0:
+                return w_outs[h]
+            w_eq = w_outs[h] + (gen_kg_h[h] - removal_kg_h) / m
+            return w_eq + (w_start - w_eq) * math.exp(-m / moist_cap_kg)
+
+        def dehumidify(h: int, w_start: float, t_room_c: float) -> tuple[float, float]:
+            """除濕機這小時的（運轉比例, 除濕量 kg/h）：室內濕度高於目標才運轉，只運轉到剛好達標所需的時間。"""
+            if dehum is None:
+                return 0.0, 0.0
+            cap_kg_h = dehum["rule"]["removal_l_per_day"] / 24
+            if dehum["forced"][h] is not None:
+                f = dehum["forced"][h]
+                return f, cap_kg_h * f
+            if dehum["avail"][h] <= 0 or moist_cap_kg <= 0:
+                return 0.0, 0.0
+            w_target = humidity_ratio(t_room_c, dehum["rule"]["target_rh_pct"])
+            if free_moisture(h, w_start) <= w_target:
+                return 0.0, 0.0
+            m = vent_kg_h(h)
+            decay = math.exp(-m / moist_cap_kg)
+            w_eq_needed = (w_target - w_start * decay) / (1 - decay)        # 小時結束剛好達標所需的平衡濕度
+            removal = gen_kg_h[h] - m * (w_eq_needed - w_outs[h])
+            f = min(dehum["avail"][h], max(0.0, removal) / cap_kg_h)
+            return f, cap_kg_h * f
 
         def free_running(h: int, t_start: float) -> tuple[float, float]:
             """冷氣沒開時的室溫，一階熱響應（1R1C 模型）：
@@ -413,17 +488,31 @@ class LoadModel:
 
         # 跑兩輪：第一輪求出 23 時結束時的室溫，作為 0 時的起始狀態（每天週期性重複）
         t_room = (temps[23] + t_wall[23]) / 2
+        w_room = w_outs[23]
         for _ in range(2):
             rows = []
             for h in range(24):
-                t_free, t_free_end = free_running(h, t_room)
                 on = ac_on[h] if has_ac else 0.0
-                pulldown = 0.0
+                # 除濕機（只在冷氣沒開時）：除下的水氣潛熱與耗電都變成室內顯熱
+                f_dehum, removal = dehumidify(h, w_room, t_room) if on <= 0 else (0.0, 0.0)
+                if dehum is not None:
+                    appliance_w[dehum["id"]][h] = dehum["power_w"] * f_dehum
+                    internal[h] = base_internal[h] + dehum["power_w"] * f_dehum + removal * inf["h_fg"] / 3600
+                t_free, t_free_end = free_running(h, t_room)
+                pulldown = latent_pulldown = 0.0
+                w_target = humidity_ratio(setpoints[h], rh_ac)
                 if on > 0 and t_room > setpoints[h]:
                     pulldown = capacity_kj_k * (t_room - setpoints[h]) / 3.6  # kJ → Wh（一小時平均 W）
-                load = cooling_load(geo, self.params, temps[h], rhs[h], solar[h], t_wall[h], setpoints[h],
-                                    ppl_s[h], ppl_l[h], internal[h], on, pulldown,
-                                    vertical[h] if vertical is not None else None)
+                args = (geo, self.params, temps[h], rhs[h], solar[h], t_wall[h], setpoints[h],
+                        ppl_s[h], ppl_l[h], internal[h], on, pulldown, vertical[h] if vertical is not None else None)
+                load = cooling_load(*args)
+                if on > 0 and w_room > w_target:
+                    # 累積的水氣（含家具牆面吸附）：冷氣先處理顯熱與穩態負載，剩下的能力才用來除濕，
+                    # 沒除完的留到下一小時（實際上要數小時才會降到目標濕度）
+                    cap_factor, _ = performance_factors(temps[h], indoor_wet_bulb(setpoints[h], rh_ac, ac), ac)
+                    spare = max(0.0, rated_w * rated_cop * cap_factor * on - load.total)
+                    latent_pulldown = min(moist_cap_kg * (w_room - w_target) * inf["h_fg"] / 3600, spare)
+                    load = cooling_load(*args, latent_pulldown)
                 if not has_ac or on <= 0:
                     load = CoolingLoad()  # 冷氣沒開就沒有冷房負載（只記錄耗電為 0）
                 result = ac_power(load.total, rated_w, temps[h], setpoints[h], ac, on, rated_cop, rh_ac)
@@ -431,11 +520,18 @@ class LoadModel:
                 t_ac = self._cooled_room_temp(load, result, setpoints[h], t_room, ua_closed, capacity_kj_k, on) \
                     if cooling else t_free
                 t_room = t_ac if on >= 0.5 and cooling else t_free_end
+                w_start = w_room
+                if on >= 0.5 and cooling:   # 冷氣維持目標濕度，另外除掉 latent_pulldown 對應的累積水氣
+                    removed_kg = load.latent_pulldown * 3600 / inf["h_fg"]
+                    w_room = max(w_target, w_room - removed_kg / moist_cap_kg) if w_room > w_target else w_room
+                else:
+                    w_room = free_moisture(h, w_room, removal)
                 rows.append({
                     "hour": h,
                     "setpoint_c": setpoints[h] if on > 0 else None,
                     "ac_on": on,
                     "room_temp_c": t_ac if cooling else t_free,   # 使用者在這小時感受到的室溫
+                    "room_rh_pct": relative_humidity(t_ac if cooling else t_free, (w_start + w_room) / 2),
                     **{f"load_{k}": v for k, v in load.as_dict().items()},
                     "load_total_w": load.total,
                     # 能力不足：只計「連穩態負載都處理不了」的部分；
