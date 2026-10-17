@@ -650,6 +650,44 @@ class LoadModel:
         self._prep_cache[key] = (weather, prep)      # 保留 weather 參考，id 不會被重複使用
         return prep
 
+    def linear_model(self, space: Space, weather: pd.DataFrame, day_type: str, ac_on: list[float],
+                     appliance_factors: dict | None = None, reference_setpoint: float = 26.0) -> dict:
+        """給混合整數規劃（core/milp.py）用的線性化房間模型，每小時：
+
+        - 冷氣運轉時：顯熱冷房負載 = a − b × 室溫（外牆、窗戶、滲透都與室溫成線性，日射、人體、家電為常數）
+        - 冷氣沒開時：室溫平衡 UA_外 ×（等效外界溫度 − 室溫）+ 室內得熱（同 space_hourly 的 1R1C）
+        - 冷氣能力、COP 以參考設定溫度與中等負載率（0.6）估計；潛熱（人體、滲透）以參考設定溫度估計為常數
+        非線性的部分（COP 隨負載率變化、除濕、累積水氣）在這裡固定，最後再用完整推演驗算。"""
+        ac_unit = space.get_appliance("air_conditioner")
+        has_ac = ac_unit is not None and ac_unit.enabled
+        prep = self._prepare(space, weather, day_type, ac_on, has_ac, appliance_factors, None)
+        ac, inf = self.params["air_conditioner"], self.params["infiltration"]
+        rated_w, rated_cop = ac_rating(ac_unit, ac) if has_ac else (0.0, ac["rated_cop"])
+        rh_ac = inf["indoor_rh_pct"]
+        geo, temps, t_wall = prep["geo"], prep["temps"], prep["t_wall"]
+        out = {"a": [], "b": [], "capacity_w": [], "cop": [], "latent_w": [], "ua_free": [], "t_free": [],
+               "gain_free": [], "other_w": list(prep["base_internal"]),
+               "heat_capacity_j_k": prep["capacity_kj_k"] * 1000}
+        for h in range(24):
+            args = (geo, self.params, temps[h], prep["rhs"][h], prep["solar"][h], t_wall[h])
+            rest = (prep["ppl_s"][h], prep["ppl_l"][h], prep["base_internal"][h], 1.0, 0.0,
+                    prep["vertical"][h] if prep["vertical"] is not None else None)
+            lo, hi = cooling_load(*args, 20.0, *rest), cooling_load(*args, 30.0, *rest)
+            slope = (lo.sensible - hi.sensible) / 10
+            out["a"].append(lo.sensible + 20.0 * slope)
+            out["b"].append(slope)
+            ref = cooling_load(*args, reference_setpoint, *rest)
+            out["latent_w"].append(ref.latent if has_ac else 0.0)
+            cap_factor, _ = performance_factors(temps[h], indoor_wet_bulb(reference_setpoint, rh_ac, ac), ac)
+            out["capacity_w"].append(rated_w * rated_cop * cap_factor)
+            out["cop"].append(ac_cop(temps[h], reference_setpoint, 0.6, ac, rated_cop, rh_ac))
+            ua_out = (prep["ua_open"] if temps[h] >= ac["natural_ventilation_below_c"] else prep["ua_closed"]) \
+                + prep["ua_exhaust"][h]
+            out["ua_free"].append(ua_out)
+            out["t_free"].append((temps[h] + t_wall[h]) / 2)
+            out["gain_free"].append(prep["ppl_s"][h] + prep["base_internal"][h])
+        return out
+
     def _exhaust_conductance(self, space: Space, appliance_w: dict[str, list[float]]) -> list[float]:
         """排風家電（排油煙機、抽風機）運轉時帶走室內熱量的等效熱傳係數（W/K）。"""
         inf = self.params["infiltration"]

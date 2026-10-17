@@ -43,8 +43,8 @@ def compare_day(_analyzer: Analyzer, settings_key: str, day: date, plan_id: str)
 
 @st.cache_data(max_entries=16, show_spinner="依模式排程最佳化中…")
 def run_schedule(_analyzer: Analyzer, settings_key: str, day: date, plan_id: str,
-                 by_hour: tuple[str, ...], name: str) -> tuple[ControlPlan, SimulationResult]:
-    r = _analyzer.opt.optimize(day, ModeSchedule(list(by_hour), name), plan_id)
+                 by_hour: tuple[str, ...], name: str, method: str = "coordinate") -> tuple[ControlPlan, SimulationResult]:
+    r = _analyzer.opt.optimize(day, ModeSchedule(list(by_hour), name), plan_id, method=method)
     return r.plan, r.result
 
 

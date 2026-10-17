@@ -16,7 +16,7 @@
 - Python 3.11 以上
 - pandas、numpy：資料處理
 - Streamlit：前端介面
-- 最佳化：先用規則或簡單演算法，有時間再改用 PuLP 或 scipy
+- 最佳化：座標下降＋窮舉（預設）；混合整數規劃用 scipy.optimize.milp（HiGHS）
 - 設定檔：JSON
 - 程式註解與介面文字使用繁體中文
 - 單位：功率 W、能量 kWh、溫度 °C、面積 坪
@@ -47,6 +47,7 @@ hems/
 │   ├── simulator.py   # 24 小時推演引擎（ControlPlan → SimulationResult）
 │   ├── charts.py      # 靜態圖表（matplotlib）
 │   ├── optimizer.py   # 四種模式的最佳化（modes.json 參數 → ControlPlan）
+│   ├── milp.py        # 全屋混合整數規劃最佳化（scipy HiGHS；介面「運轉模式」可選）
 │   ├── metrics.py     # 指標計算（含 PMV/PPD）、模式比較、節省建議、報告
 │   ├── parallel.py    # 多核心平行計算（整月分析每天一個工作；HEMS_WORKERS=1 關閉）
 │   └── storage.py     # 資料層：帳號與設定檔（SQLAlchemy：桌面 SQLite、網頁 PostgreSQL）
@@ -153,7 +154,7 @@ hems/
 - [x] 9. A5 冷氣真實性能曲線（依能效等級／噸數）（白天工作負責：改 core）
 - [x] 10. C4 情境比較（What-if）與投資回收年限（夜間）
 - [x] 11. D3 效能優化（快取與多核心平行；整月分析 58 → 2 秒）（白天工作負責：改 core）
-- [ ] 12. B3 最佳化升級（PuLP 混合整數規劃／MPC，與現行方法比較）（白天工作負責：改 core）
+- [x] 12. B3 最佳化升級（scipy／HiGHS 全屋混合整數規劃，序列線性化；與現行方法比較見 docs/reports/optimizer_comparison.md）（白天工作負責：改 core）
 - [x] 13. C3 手機版排版（夜間）
 - [x] 14. C5 報告匯出 PDF（用 matplotlib 內建 PDF 輸出，不裝新套件）（夜間）
 - [x] 15. D4 錯誤處理與記錄、D5 程式文件（夜間）

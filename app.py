@@ -58,7 +58,7 @@ DEFAULT_UI = {
     "preset": "夏季代表日", "custom_day": rep["summer"], "hour": datetime.now().hour, "plan_id": "tou_2",
     "schedule_type": "single", "mode": "normal", "day_mode": "normal", "night_mode": "sleep",
     "day_start": 7, "day_end": 23, "forecast_correction": False,
-    "onboarded": False,
+    "onboarded": False, "opt_method": "coordinate",
 }
 # 登入並載入最後使用的設定檔（桌面版自動以本機使用者登入）；之後每次修改都會自動存檔
 store = ensure_session(DEFAULT_UI)
@@ -110,6 +110,8 @@ else:
                                         night_start=ui["day_end"], night_end=ui["day_start"])
 
 # ---------- 左側功能選單：每個功能一個設定視窗 ----------
+
+OPT_METHODS = {"coordinate": "座標下降（預設）", "milp": "混合整數規劃 MILP（全屋、逐時）"}
 
 PLAN_GUIDE = {
     "progressive": ("一般家庭預設的計費方式。不分時段，**每月用越多度、每度越貴**（分 6 級，夏月 1.78–8.86 元）。",
@@ -227,8 +229,14 @@ def dialog_mode() -> None:
                                       help="其餘時間為夜間，例如 07:00–23:00 表示 23:00 自動切換夜間模式")
         changes = {"schedule_type": "switch", "day_mode": day_mode, "night_mode": night_mode,
                    "day_start": start, "day_end": end}
+    st.divider()
+    method = st.radio("最佳化方法", list(OPT_METHODS), index=list(OPT_METHODS).index(ui.get("opt_method", "coordinate")),
+                      format_func=OPT_METHODS.get,
+                      help="座標下降：逐房搜尋、每個時段一個設定溫度（預設，0.1 秒）。"
+                           "MILP：全屋聯合混合整數規劃，每房每小時各自調整，舒適度通常較好（約 0.4 秒）。"
+                           "比較結果見 docs/reports/optimizer_comparison.md")
     if st.button("套用", type="primary", width="stretch"):
-        apply_ui(**changes)
+        apply_ui(**changes, opt_method=method)
 
 
 @st.dialog("🌡️ 舒適偏好")
@@ -299,7 +307,8 @@ with st.sidebar:
         apply_ui(hour=sim_hour + 1)
     menu_item("📍 地區與天氣", location_label(settings), dialog_location, "location")
     menu_item("💰 電價方案", tariff.plans[plan_id]["name"], dialog_tariff, "tariff")
-    menu_item("🎛️ 運轉模式", mode_schedule.name, dialog_mode, "mode")
+    menu_item("🎛️ 運轉模式", mode_schedule.name + ("・MILP 最佳化" if ui.get("opt_method") == "milp" else ""),
+              dialog_mode, "mode")
     menu_item("🌡️ 舒適偏好", f"夏季清醒 {cooling['preferred_awake_c']:g}°C、睡眠 {cooling['preferred_sleep_c']:g}°C",
               dialog_comfort, "comfort")
     menu_item("🏠 格局與房間", f"{len(house.spaces)} 個空間，總面積 {house.total_area_ping:.1f} 坪", dialog_layout, "layout")
@@ -323,7 +332,8 @@ if person_overrides:
     except (ValueError, KeyError):
         st.session_state.person_overrides, sim_settings = {}, settings
 key = sim_key(sim_settings)
-base_plan, base_result = run_schedule(analyzer, key, day, plan_id, tuple(mode_schedule.by_hour), mode_schedule.name)
+base_plan, base_result = run_schedule(analyzer, key, day, plan_id, tuple(mode_schedule.by_hour), mode_schedule.name,
+                                     ui.get("opt_method", "coordinate"))
 effective_plan, remote_result = run_with_remote(analyzer, base_plan, key, day, plan_id, tuple(mode_schedule.by_hour),
                                                 json.dumps(remote, sort_keys=True))
 if remote:

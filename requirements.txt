@@ -11,6 +11,8 @@ pytest>=8.0
 # 資料庫：本機 SQLite（內建）、網頁版 PostgreSQL（pg8000 為純 Python 驅動，部署不需編譯）
 sqlalchemy>=2.0
 pg8000>=1.30
+# 混合整數規劃最佳化（scipy.optimize.milp，內建 HiGHS 求解器）
+scipy>=1.11
 # 機器學習（用電預測）
 scikit-learn>=1.5
 # 開發工具：程式碼檢查

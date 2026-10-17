@@ -411,7 +411,12 @@ class Optimizer:
 
     # ----- 主流程 -----
 
-    def optimize(self, day: date, mode: str | ModeSchedule, plan_id: str = "tou_2") -> OptimizationResult:
+    def optimize(self, day: date, mode: str | ModeSchedule, plan_id: str = "tou_2",
+                 method: str = "coordinate") -> OptimizationResult:
+        """method："coordinate"＝逐房座標下降＋可移轉負載窮舉（預設）；"milp"＝全屋混合整數規劃（core/milp.py）。"""
+        if method == "milp":
+            from core.milp import optimize_milp  # scipy 較慢載入，需要時才匯入
+            return optimize_milp(self, day, mode, plan_id)
         schedule = mode if isinstance(mode, ModeSchedule) else ModeSchedule.single(self.modes[mode])
         weather = self.sim.weather.get_hourly_weather(day)
         weather = self.sim.load_model.with_solar_geometry(weather, day)   # 各方位牆面日射
@@ -447,6 +452,24 @@ class Optimizer:
         result = self.sim.run(day, plan_id, plan)
         return OptimizationResult(schedule, plan, result, self._setpoint_table(result),
                                   self._task_table(result), levels_all)
+
+    def evaluate(self, result: SimulationResult, schedule: ModeSchedule) -> dict[str, float]:
+        """以同一套標準評估任一控制策略的推演結果（比較不同最佳化方法用）：
+        全屋流動電費、舒適懲罰（與目標函數相同的平方項）、全屋最大用電（kW），目標值 = 三者加總（需量 × 權重）。"""
+        season, prefs = self.season(result.day)
+        ctx_all = self.contexts(result.day_type, season)
+        by_space = {sid: list(g.sort_values("hour")["room_temp_c"]) for sid, g in result.climate.groupby("space_id")}
+        penalty = 0.0
+        for space in self.ac_spaces:
+            ctx, temps = ctx_all[space.id], by_space[space.id]
+            for h, temp in enumerate(temps):
+                p = self._mode_params(schedule, h)
+                ideal_awake, ideal_sleep = self._ideal(ctx, h, prefs)
+                penalty += p.comfort_weight * (ctx.awake[h] * discomfort(temp, ideal_awake, p.deadband_c) ** 2
+                                               + ctx.asleep[h] * discomfort(temp, ideal_sleep, p.deadband_c) ** 2)
+        cost, peak = result.energy_cost, result.peak_demand_kw
+        return {"電費(元)": cost, "舒適懲罰(元)": penalty, "尖峰需量(kW)": peak,
+                "目標值(元)": cost + penalty + self.demand_weight * peak}
 
     @staticmethod
     def _setpoint_table(result: SimulationResult) -> pd.DataFrame:
