@@ -9,10 +9,8 @@ from __future__ import annotations
 
 import logging
 import os
-import pickle
 from collections.abc import Callable
 from concurrent.futures import ProcessPoolExecutor
-from concurrent.futures.process import BrokenProcessPool
 
 log = logging.getLogger("hems.parallel")
 _POOL: ProcessPoolExecutor | None = None
@@ -41,8 +39,10 @@ def parallel_map(fn: Callable, items, *args) -> list:
     try:
         futures = [_pool().submit(fn, item, *args) for item in items]
         return [f.result() for f in futures]
-    except (BrokenProcessPool, OSError, pickle.PicklingError, RuntimeError) as e:
-        log.warning("平行計算失敗，改為逐一計算：%s", e)
+    except Exception as e:   # noqa: BLE001
+        # 無法傳給其他程序（Python 3.11 序列化區域函式丟 AttributeError、3.14 丟 PicklingError）、
+        # 程序池損壞、環境不允許開程序等：改為逐一計算。若是計算本身的錯誤，逐一計算時會再次發生並往上丟出。
+        log.warning("平行計算失敗，改為逐一計算：%s: %s", type(e).__name__, e)
         if _POOL is not None:
             _POOL.shutdown(wait=False, cancel_futures=True)
         _POOL = None
